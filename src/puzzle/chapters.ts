@@ -39,6 +39,15 @@ export const CHAPTERS: readonly ChapterDef[] = [
     outro: '影子、剪影、两种真相。正交投影保留对称、丢掉深度；透视保留深度、打破对称。四维物体你永远只能看到影子——但你已经学会了换一盏灯。',
     levels: LEVELS.filter((l) => l.chapter === 4),
   },
+  {
+    index: 5,
+    id: 'polytopes',
+    title: 'Other Polytopes',
+    subtitle: '异形',
+    concept: '四维有六种正多胞体：十六胞体与二十四胞体的截面和对称',
+    outro: '十六胞体、二十四胞体、对称。超立方体不是四维的全部：对偶把立方体换成八面体，而二十四胞体根本没有三维的影子。你已经能在不认识的物体上用同样的方法。',
+    levels: LEVELS.filter((l) => l.chapter === 5),
+  },
 ];
 
 export function chapterOf(level: LevelDef): ChapterDef {

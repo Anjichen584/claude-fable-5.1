@@ -51,9 +51,11 @@ export class TesseractView {
     const edgeCount = poly.edges.length;
     this.edgePositions = new Float32Array(edgeCount * 2 * 3);
     const edgeColors = new Float32Array(edgeCount * 2 * 3);
+    // "内"顶点 = 原始 w < 0（超立方体即 w = −1 的内立方体）；对 16/24-cell 同样按 w 分色
+    const inner = (i: number) => (poly.name === 'tesseract' ? isInnerVertex(i) : poly.vertices[i][3] < 0);
     poly.edges.forEach(([i, j], e) => {
-      const ci = isInnerVertex(i);
-      const cj = isInnerVertex(j);
+      const ci = inner(i);
+      const cj = inner(j);
       const col = ci && cj ? COLOR_INNER : !ci && !cj ? COLOR_OUTER : COLOR_LINK;
       for (let k = 0; k < 2; k++) {
         edgeColors[(e * 2 + k) * 3 + 0] = col.r;
@@ -78,7 +80,7 @@ export class TesseractView {
     this.vertexPositions = new Float32Array(poly.vertices.length * 3);
     const vColors = new Float32Array(poly.vertices.length * 3);
     poly.vertices.forEach((_, i) => {
-      const c = isInnerVertex(i) ? COLOR_INNER : COLOR_OUTER;
+      const c = inner(i) ? COLOR_INNER : COLOR_OUTER;
       vColors[i * 3] = c.r;
       vColors[i * 3 + 1] = c.g;
       vColors[i * 3 + 2] = c.b;

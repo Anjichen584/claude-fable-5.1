@@ -49,6 +49,12 @@ export function GameHUD({ snap }: Props) {
             <span style={{ color: GOLD }}>{snap.linked[0]} ≡ {snap.linked[1]}</span>
           </div>
         )}
+        {snap.polytope.kind !== 'tesseract' && (
+          <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: GOLD }}>核心</span>
+            <span style={{ color: '#fff' }}>{snap.polytope.name} {snap.polytope.vertices}v · {snap.polytope.edges}e · {snap.polytope.cells}c</span>
+          </div>
+        )}
         {snap.projection.switchable && (
           <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ color: GOLD }}>投影 (P)</span>
@@ -159,6 +165,7 @@ function BridgeRow({ b }: { b: GameSnapshot['bridges'][number] }) {
         <span style={{ color }}>
           {b.id}
           {b.projection ? <span style={{ color: '#6a7aa0' }}> · 对径 · {b.projection === 'perspective' ? '透视' : '正交'}</span> : b.second ? <span style={{ color: '#6a7aa0' }}> · 双旋</span> : null}
+          {b.anyVertex ? <span style={{ color: GOLD }}> · 任意顶点</span> : null}
         </span>
         <span>
           <span style={{ color: involvesW(b.plane) ? GOLD : '#9fb3d9' }}>{b.plane}</span>

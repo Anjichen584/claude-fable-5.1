@@ -595,7 +595,140 @@ export const LEVEL_12: LevelDef = {
   ],
 };
 
-export const LEVELS: readonly LevelDef[] = [LEVEL_1, LEVEL_2, LEVEL_3, LEVEL_4, LEVEL_5, LEVEL_6, LEVEL_7, LEVEL_8, LEVEL_9, LEVEL_10, LEVEL_11, LEVEL_12];
+// ===========================================================================
+// 第五章 Other Polytopes 异形
+// 概念：四维有六种正多胞体。这里用两种：
+//   正十六胞体（16-cell，超立方体的对偶）：8 顶点 24 边 32 面 16 四面体胞。顶点正对 W 时每个截面都是八面体
+//     （超立方体胞正对 W 时每个截面都是立方体——对偶的镜像）。顶点形也是八面体，所以任何姿态顶端附近都是八面体；
+//     "正中也是八面体"才能证明顶点正对 W。
+//   正二十四胞体（24-cell，自对偶）：24 顶点 96 边 96 面 24 八面体胞。胞正对 W 时截面是截角八面体（24v36e），
+//     顶点正对 W 时顶端附近是立方体（顶点形）。对称群有 1152 个元素：任何顶点都能填任何锚点（anyVertex）。
+// ===========================================================================
+
+const OCTA = { vertices: 6, edges: 12 };
+const CUBE = { vertices: 8, edges: 12 };
+
+// ---------------------------------------------------------------------------
+// Level 13 — Sixteen：十六胞体，正中八面体 ⇔ 顶点正对 W
+// ---------------------------------------------------------------------------
+export const LEVEL_13: LevelDef = {
+  id: 'sixteen',
+  index: 13,
+  chapter: 5,
+  title: 'Sixteen',
+  subtitle: '十六胞体',
+  platforms: [
+    { min: [-2, -T, 2.5], max: [2, 0, 7] },
+    { min: [-2, -T, -7], max: [2, 0, -2.5] },
+  ],
+  playerStart: [0, 0, 5],
+  core: {
+    position: [0, 2.6, 0],
+    scale: 1.4,
+    initialRotation: rot({ XW: deg(30), YW: deg(20) }),
+    tilt: { pitch: 0.25, yaw: 0.5 },
+    allowedPlanes: ['XW', 'YW'],
+    polytope: 'cell16',
+  },
+  bridges: [],
+  nodes: [{ id: 'octa', position: [0, 0, 0], trigger: { kind: 'shape', shape: OCTA, label: '正中八面体 |w₀| ≤ 0.2', holdSeconds: 0.5, w0Range: [-0.2, 0.2] } }],
+  gates: [{ id: 'gate-1', start: [0, 0, 2.5], walkable: { min: [-0.7, -T, -2.6], max: [0.7, 0, 2.6] }, requires: ['octa'] }],
+  exit: { position: [0, 0, -5.5], radius: 0.9, requires: ['gate-1'] },
+  slice: { enabled: true, initial: 0.2, range: [-1.2, 1.2] },
+  hints: [
+    { id: 'h-start', when: 'start', text: '换一个物体：正十六胞体，超立方体的对偶——8 个顶点、24 条边、16 个四面体胞。闸门要求：切片在正中（|w₀| ≤ 0.2）时截面是八面体。' },
+    { id: 'h-w', when: 'noW:8', text: '顶端附近的截面总是八面体（它的顶点形）；但"正中也是八面体"只在一个顶点正对 W 时成立。把 XW、YW 都转回 0°（或 ±90°、180°）。' },
+    { id: 'h-done', when: 'activated:octa', text: '超立方体胞正对 W 时每个截面都是立方体；十六胞体顶点正对 W 时每个截面都是八面体。对偶，连切片都是镜像。' },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Level 14 — Twenty-Four：二十四胞体，顶点形是立方体
+// ---------------------------------------------------------------------------
+export const LEVEL_14: LevelDef = {
+  id: 'twentyfour',
+  index: 14,
+  chapter: 5,
+  title: 'Twenty-Four',
+  subtitle: '二十四胞体',
+  platforms: [
+    { min: [-2, -T, 2.5], max: [2, 0, 7] },
+    { min: [-2, -T, -7], max: [2, 0, -2.5] },
+  ],
+  playerStart: [0, 0, 5],
+  core: {
+    position: [0, 2.6, 0],
+    scale: 1.2,
+    initialRotation: rot({}),
+    tilt: { pitch: 0.25, yaw: -0.5 },
+    allowedPlanes: ['XW'],
+    polytope: 'cell24',
+  },
+  bridges: [],
+  nodes: [{ id: 'cube', position: [0, 0, 0], trigger: { kind: 'shape', shape: CUBE, label: '立方体 8v · 12e', holdSeconds: 0.5 } }],
+  gates: [{ id: 'gate-1', start: [0, 0, 2.5], walkable: { min: [-0.7, -T, -2.6], max: [0.7, 0, 2.6] }, requires: ['cube'] }],
+  exit: { position: [0, 0, -5.5], radius: 0.9, requires: ['gate-1'] },
+  slice: { enabled: true, initial: 0.3, range: [-1.5, 1.5] },
+  hints: [
+    { id: 'h-start', when: 'start', text: '正二十四胞体：24 个顶点、96 条边、24 个正八面体胞，自对偶，三维里没有任何对应物。现在一个胞正对着 W，截面是截角八面体。闸门要立方体。' },
+    { id: 'h-w', when: 'noW:8', text: '立方体是它的顶点形——顶点附近的截面。让一个顶点正对 W：XW（Q / E）转到 45° 左右，再把 w₀ 推到顶端。' },
+    { id: 'h-done', when: 'activated:cube', text: '二十四胞体的顶点形是立方体，胞是八面体——它把超立方体和十六胞体的性质各拿了一半。' },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Level 15 — Symmetry：立方体截面 → 中继 → 任意顶点双旋桥（章末综合）
+// ---------------------------------------------------------------------------
+export const LEVEL_15: LevelDef = {
+  id: 'symmetry',
+  index: 15,
+  chapter: 5,
+  title: 'Symmetry',
+  subtitle: '对称',
+  platforms: [
+    { min: [-2, -T, 4], max: [2, 0, 8] },
+    { min: [-2.5, -T, -1.5], max: [2.5, 0, 1.5] },
+    { min: [-2, -T, -8], max: [2, 0, -4] },
+  ],
+  playerStart: [0, 0, 6],
+  core: {
+    position: [0, 3.1, 0],
+    scale: 1.2,
+    initialRotation: rot({}),
+    tilt: { pitch: 0.3, yaw: 0.5 },
+    allowedPlanes: ['XW', 'YZ'],
+    polytope: 'cell24',
+  },
+  bridges: [
+    {
+      id: 'bridge-b',
+      start: [0, 0, -1.5],
+      walkable: { min: [-0.7, -T, -4.1], max: [0.7, 0, -1.4] },
+      vertex: 8, // (1, 0, 0, 1)
+      plane: 'XW',
+      vertex2: 12, // (0, 1, 1, 0)
+      plane2: 'YZ',
+      solution: rot({ XW: deg(-75), YZ: deg(70) }),
+      anyVertex: true,
+      requires: ['relay'],
+    },
+  ],
+  nodes: [
+    { id: 'cube', position: [0, 0, 2.7], trigger: { kind: 'shape', shape: CUBE, label: '立方体 8v · 12e', holdSeconds: 0.5 } },
+    { id: 'relay', position: [0, 0, 0], trigger: { kind: 'reach', radius: 0.9 }, requires: ['cube'] },
+  ],
+  gates: [{ id: 'gate-a', start: [0, 0, 4], walkable: { min: [-0.7, -T, 1.4], max: [0.7, 0, 4.1] }, requires: ['cube'] }],
+  exit: { position: [0, 0, -6.5], radius: 0.9, requires: ['bridge-b'] },
+  slice: { enabled: true, initial: 0.3, range: [-1.5, 1.5] },
+  hints: [
+    { id: 'h-start', when: 'start', text: '章末综合。先用立方体截面打开第一道闸门（XW ≈ 45°，w₀ 推到顶端）。' },
+    { id: 'h-cube', when: 'activated:cube', text: '闸门开启。走到中继——后面是一座双旋桥，但这次任何顶点都能填锚点。' },
+    { id: 'h-relay', when: 'activated:relay', text: '二十四胞体有 1152 个对称：XW 或 YZ 转 90° 后，又是另一个顶点落到原来的位置。XW（Q / E）与 YZ（3 + [ ]）各自调整，哪个顶点来都算。' },
+    { id: 'h-done', when: 'activated:bridge-b', text: '对称越高，解越多。六种正多胞体里，二十四胞体是唯一没有三维类比的——它只属于四维。' },
+  ],
+};
+
+export const LEVELS: readonly LevelDef[] = [LEVEL_1, LEVEL_2, LEVEL_3, LEVEL_4, LEVEL_5, LEVEL_6, LEVEL_7, LEVEL_8, LEVEL_9, LEVEL_10, LEVEL_11, LEVEL_12, LEVEL_13, LEVEL_14, LEVEL_15];
 
 export function levelByIndex(index: number): LevelDef | undefined {
   return LEVELS.find((l) => l.index === index);

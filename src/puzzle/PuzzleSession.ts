@@ -1,6 +1,6 @@
 import { DEFAULT_PROJECTION, distance3, involvesW, matchesShape, rotateAll, sectionSignature, sliceHyperplane, type Plane, type Polytope4, type Rotation4D, type SectionSignature, type Vec3 } from '../math';
-import { bridgePlanes, combineDualEvaluation, evaluateBridge, pointInAnyAABBxz, resolveAnchor, resolveAnchor2, toleranceOf, vertexWorldPosition, type BridgeEvaluation } from './PuzzleRules';
-import type { AABB, BridgeDef, GateDef, LevelDef, NodeDef } from './types';
+import { bridgePlanes, combineDualEvaluation, evaluateBridge, evaluateBridgeAnyVertex, pointInAnyAABBxz, resolveAnchor, resolveAnchor2, toleranceOf, vertexWorldPosition, type BridgeEvaluation } from './PuzzleRules';
+import type { AABB, BridgeDef, GateDef, LevelDef, NodeDef, TargetRef } from './types';
 import type { ProjectionMode } from '../math';
 
 export interface BridgeStatus {
@@ -105,12 +105,14 @@ export class PuzzleSession {
   /** 评估一座桥在给定姿态下的状态（含双旋桥的第二目标），不改动状态。 */
   evaluate(bridge: BridgeDef, rotation: Rotation4D, projectionBlend = 0): BridgeEvaluation {
     const anchor = this.anchorOf(bridge);
-    const endpoint = vertexWorldPosition(this.poly, bridge.vertex, rotation, this.level.core, DEFAULT_PROJECTION, projectionBlend);
-    const first = evaluateBridge(bridge, endpoint, anchor);
+    const evalTarget = (ref: TargetRef, a: Vec3): BridgeEvaluation =>
+      bridge.anyVertex
+        ? evaluateBridgeAnyVertex(this.poly, bridge, rotation, this.level.core, a, projectionBlend)
+        : evaluateBridge(bridge, vertexWorldPosition(this.poly, ref, rotation, this.level.core, DEFAULT_PROJECTION, projectionBlend), a);
+    const first = evalTarget(bridge.vertex, anchor);
     if (bridge.vertex2 === undefined) return first;
     const anchor2 = resolveAnchor2(this.poly, bridge, this.level.core) as Vec3;
-    const endpoint2 = vertexWorldPosition(this.poly, bridge.vertex2, rotation, this.level.core, DEFAULT_PROJECTION, projectionBlend);
-    return combineDualEvaluation(first, evaluateBridge(bridge, endpoint2, anchor2));
+    return combineDualEvaluation(first, evalTarget(bridge.vertex2, anchor2));
   }
 
   /** 推进一帧。返回本帧产生的事件（已排序）。 */
@@ -180,7 +182,8 @@ export class PuzzleSession {
           n.hold = 0;
         }
       } else if (trig.kind === 'shape') {
-        const ok = this.section !== null && matchesShape(this.section, trig.shape);
+        const inRange = !trig.w0Range || (input.sliceW0 !== null && input.sliceW0 >= trig.w0Range[0] && input.sliceW0 <= trig.w0Range[1]);
+        const ok = inRange && this.section !== null && matchesShape(this.section, trig.shape);
         if (ok) {
           n.hold += input.dt;
           if (n.hold >= (trig.holdSeconds ?? 0.5)) {

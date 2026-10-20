@@ -3,7 +3,7 @@ import * as math from '../math';
 import { createTesseract, type Plane, type Rotation4D, type Vec3 } from '../math';
 import { LEVELS } from '../puzzle/levels';
 import { PuzzleSession } from '../puzzle/PuzzleSession';
-import { targetPoint, bridgePlanes, combineDualEvaluation, evaluateBridge, pointInAABBxz, resolveAnchor, resolveAnchor2, toleranceOf, vertexWorldPosition, type BridgeEvaluation } from '../puzzle/PuzzleRules';
+import { targetPoint, bridgePlanes, combineDualEvaluation, evaluateBridge, evaluateBridgeAnyVertex, pointInAABBxz, resolveAnchor, resolveAnchor2, toleranceOf, vertexWorldPosition, type BridgeEvaluation } from '../puzzle/PuzzleRules';
 import { PLANES } from '../math';
 import { CHAPTERS, chapterOf, isLastInChapter, nextChapter } from '../puzzle/chapters';
 import type { BridgeDef, LevelDef } from '../puzzle/types';
@@ -45,9 +45,11 @@ describe.each(LEVELS.map((l) => [l.id, l] as const))('关卡 %s', (_id, level) =
   });
 
   describe.each(level.bridges.map((b) => [b.id, b] as const))('桥 %s', (_bid, bridge) => {
+    /** 本关的核心多胞体（第五章起可能不是超立方体） */
+    const P = math.createPolytope(level.core.polytope ?? 'tesseract');
     const base = baseRotationFor(level, bridge);
-    const anchor = resolveAnchor(T, bridge, level.core);
-    const anchor2 = resolveAnchor2(T, bridge, level.core);
+    const anchor = resolveAnchor(P, bridge, level.core);
+    const anchor2 = resolveAnchor2(P, bridge, level.core);
     const planes = bridgePlanes(bridge);
     const dual = bridge.vertex2 !== undefined;
     /** 第四章：对径顶点对（v, −v）只用一个平面，靠投影方式区分，不是"双旋"桥 */
@@ -56,10 +58,13 @@ describe.each(LEVELS.map((l) => [l.id, l] as const))('关卡 %s', (_id, level) =
 
     /** 与 PuzzleSession.evaluate 一致的完整评估（含双旋第二目标），在桥所要求的投影下 */
     const evalAt = (r: Rotation4D, b = blend): BridgeEvaluation => {
-      const first = evaluateBridge(bridge, vertexWorldPosition(T, bridge.vertex, r, level.core, math.DEFAULT_PROJECTION, b), anchor);
+      const one = (ref: BridgeDef['vertex'], a: Vec3) =>
+        bridge.anyVertex
+          ? evaluateBridgeAnyVertex(P, bridge, r, level.core, a, b)
+          : evaluateBridge(bridge, vertexWorldPosition(P, ref, r, level.core, math.DEFAULT_PROJECTION, b), a);
+      const first = one(bridge.vertex, anchor);
       if (!dual) return first;
-      const second = evaluateBridge(bridge, vertexWorldPosition(T, bridge.vertex2 as number, r, level.core, math.DEFAULT_PROJECTION, b), anchor2 as Vec3);
-      return combineDualEvaluation(first, second);
+      return combineDualEvaluation(first, one(bridge.vertex2 as number, anchor2 as Vec3));
     };
     const withSolution = (r: Rotation4D, delta = 0): Rotation4D => {
       let out = { ...r };
@@ -153,10 +158,10 @@ describe.each(LEVELS.map((l) => [l.id, l] as const))('关卡 %s', (_id, level) =
         const [p, q] = level.core.linked as [Plane, Plane];
         expect(bridge.solution[p] - base[p]).toBeCloseTo(bridge.solution[q] - base[q], 10);
         const rPQ = { ...base, [p]: bridge.solution[p], [q]: bridge.solution[q] };
-        const ep = vertexWorldPosition(T, bridge.vertex, rPQ, level.core);
+        const ep = vertexWorldPosition(P, bridge.vertex, rPQ, level.core);
         const { applyRotation, rotate4D, projectPerspective, applyTilt } = math;
         // p、q 完全正交 → 两个旋转可交换（先 p 后 q 与先 q 后 p 结果一致）
-        const pt = targetPoint(T, bridge.vertex);
+        const pt = targetPoint(P, bridge.vertex);
         const v1 = rotate4D(rotate4D(pt, p, 0.7), q, 0.7);
         const v2 = rotate4D(rotate4D(pt, q, 0.7), p, 0.7);
         for (let i = 0; i < 4; i++) expect(v1[i]).toBeCloseTo(v2[i], 12);

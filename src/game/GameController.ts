@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { blendOf, createTesseract, W_PLANES, type Plane, type Polytope4, type ProjectionMode, type Rotation4D, sectionName } from '../math';
+import { blendOf, createPolytope, createTesseract, POLYTOPE_NAMES, W_PLANES, type Plane, type Polytope4, type PolytopeKind, type ProjectionMode, type Rotation4D, sectionName } from '../math';
 import { LEVELS } from '../puzzle/levels';
 import { CHAPTERS, chapterOf, isLastInChapter, nextChapter } from '../puzzle/chapters';
 import type { ChapterDef } from '../puzzle/types';
@@ -31,6 +31,8 @@ export interface BridgeSnapshot extends BridgeTargetSnapshot {
   second: BridgeTargetSnapshot | null;
   /** 第四章：锚点所要求的投影（null = 普通桥） */
   projection: ProjectionMode | null;
+  /** 第五章：任意顶点可填锚点 */
+  anyVertex: boolean;
   visible: boolean;
   locked: boolean;
   progress: number;
@@ -76,6 +78,8 @@ export interface GameSnapshot {
   exitReady: boolean;
   hint: string | null;
   slice: { enabled: boolean; w0: number } | null;
+  /** 核心多胞体（第五章起可能不是超立方体） */
+  polytope: { kind: PolytopeKind; name: string; vertices: number; edges: number; cells: number };
   /** 投影方式；本关不可切换时 switchable=false（前三章仍显示透视） */
   projection: { mode: ProjectionMode; switchable: boolean; blend: number };
   fps: number;
@@ -101,8 +105,8 @@ export class GameController {
 
   private readonly scene: GameScene;
   private readonly input: Input;
-  private readonly poly: Polytope4 = createTesseract();
-  private readonly tesseract: TesseractView;
+  private poly: Polytope4 = createTesseract();
+  private tesseract: TesseractView;
   private readonly coreController: CoreController;
   private readonly player = new PlayerController();
   private readonly callbacks: GameCallbacks;
@@ -161,6 +165,7 @@ export class GameController {
     this.wonChapter = null;
     this.unloadLevel();
     this.level = level;
+    this.ensurePolytope(level.core.polytope ?? 'tesseract');
     this.session = new PuzzleSession(level, this.poly);
     this.levelView = new LevelView(level);
     this.scene.root.add(this.levelView.group);
@@ -195,6 +200,16 @@ export class GameController {
     this.hint = null;
     this.phase = 'playing';
     this.emitSnapshot();
+  }
+
+  /** 第五章：按关卡切换核心多胞体（重建线框视图） */
+  private ensurePolytope(kind: PolytopeKind): void {
+    if (this.poly.name === kind) return;
+    this.scene.root.remove(this.tesseract.group);
+    this.tesseract.dispose();
+    this.poly = createPolytope(kind);
+    this.tesseract = new TesseractView(this.poly);
+    this.scene.root.add(this.tesseract.group);
   }
 
   resetLevel(): void {
@@ -439,6 +454,7 @@ export class GameController {
       exitReady: s?.exitReady ?? false,
       hint: this.hint,
       slice: l?.slice ? { ...this.viewState.slice } : null,
+      polytope: { kind: this.poly.name as PolytopeKind, name: POLYTOPE_NAMES[this.poly.name as PolytopeKind], vertices: this.poly.vertices.length, edges: this.poly.edges.length, cells: this.poly.cells.length },
       projection: { mode: this.viewState.projectionMode, switchable: l?.core.projection?.switchable ?? false, blend: this.viewState.projectionBlend },
       fps: this.fps,
       debug: this.debug,
@@ -492,6 +508,7 @@ function toBridgeSnapshot(b: BridgeStatus): BridgeSnapshot {
     plane2: b.def.plane2 ?? null,
     second: b.def.vertex2 !== undefined ? toTargetSnapshot(ev?.second) : null,
     projection: b.def.projection ?? null,
+    anyVertex: b.def.anyVertex ?? false,
     visible: b.visible,
     locked: b.locked,
     ...toTargetSnapshot(first),

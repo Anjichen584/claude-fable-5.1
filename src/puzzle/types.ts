@@ -1,4 +1,4 @@
-import type { Plane, ProjectionMode, Rotation4D, ShapeRequirement, Tilt, Vec3, Vec4 } from '../math';
+import type { Plane, PolytopeKind, ProjectionMode, Rotation4D, ShapeRequirement, Tilt, Vec3, Vec4 } from '../math';
 
 /** 轴对齐包围盒（世界坐标）。可行走判定只用 x/z；y 用于渲染高度。 */
 export interface AABB {
@@ -52,6 +52,11 @@ export interface BridgeDef {
    * 所以透视锚点在正交下够不着，反之亦然——这就是"投影不是物体本身"。
    */
   projection?: ProjectionMode;
+  /**
+   * 第五章：任意顶点都可以填入锚点（取最近的顶点评估）。用于高对称多胞体（24-cell）：
+   * 旋转 90° 后是另一个顶点落到同一位置，玩家不必分辨"是哪一个"。
+   */
+  anyVertex?: boolean;
   /** 前置条件：这些节点/桥激活后，锚点才出现并开始判定 */
   requires?: string[];
   tolerance?: Partial<BridgeTolerance>;
@@ -61,7 +66,7 @@ export type NodeTrigger =
   | { kind: 'reach'; radius: number }
   | { kind: 'slice'; range: [number, number]; holdSeconds?: number }
   /** 第三章：当前切面截面的形状满足要求（顶点/边数签名）并持续 holdSeconds */
-  | { kind: 'shape'; shape: ShapeRequirement; label: string; holdSeconds?: number };
+  | { kind: 'shape'; shape: ShapeRequirement; label: string; holdSeconds?: number; /** 额外要求切片位置落在此区间（第五章："正中也是…"） */ w0Range?: [number, number] };
 
 /** 节点：被激活后作为其他元素的前置条件。 */
 export interface NodeDef {
@@ -137,6 +142,8 @@ export interface LevelDef {
      * 未定义 = 透视且不可切换（前三章）。
      */
     projection?: { initial: ProjectionMode; switchable: boolean };
+    /** 第五章：核心用哪种正多胞体（默认超立方体） */
+    polytope?: PolytopeKind;
   };
   bridges: BridgeDef[];
   nodes: NodeDef[];

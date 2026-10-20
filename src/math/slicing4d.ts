@@ -56,16 +56,16 @@ export function sliceHyperplane(poly: Polytope4, rotatedVertices: readonly Vec4[
   const segments: Array<readonly [number, number]> = [];
   for (const face of poly.faces) {
     const hits: number[] = [];
-    for (let k = 0; k < 4; k++) {
+    for (let k = 0; k < face.length; k++) {
       const i = face[k];
-      const j = face[(k + 1) % 4];
+      const j = face[(k + 1) % face.length];
       const key = i < j ? i * 1024 + j : j * 1024 + i;
       const ei = edgeIndexByKey.get(key);
       if (ei === undefined) continue;
       const pi = edgePoint[ei];
       if (pi >= 0 && !hits.includes(pi)) hits.push(pi);
     }
-    // 一个凸四边形被超平面切，交点要么 0 个、要么 2 个（经过顶点时可能重合为 1 个）
+    // 一个凸多边形被超平面切，交点要么 0 个、要么 2 个（经过顶点时可能重合为 1 个）
     if (hits.length === 2) segments.push([hits[0], hits[1]]);
   }
 
@@ -107,7 +107,7 @@ export interface SectionSignature {
  * 从截面线框得到组合签名。
  * - 顶点：去重后的交点。
  * - 边：去重后的非退化线段。
- * - 面：每个三维胞（cell）被超平面切出一个多边形；胞 = 某一坐标固定为 ±1 的全部顶点。
+ * - 面：每个三维胞（cell）被超平面切出一个多边形（胞由 Polytope4.cells 给出）。
  */
 export function sectionSignature(poly: Polytope4, slice: Slice4, tol = 1e-6): SectionSignature {
   // 顶点去重 → 映射
@@ -136,23 +136,19 @@ export function sectionSignature(poly: Polytope4, slice: Slice4, tol = 1e-6): Se
     edgeKeys.add(i < j ? `${i}-${j}` : `${j}-${i}`);
   }
 
-  // 面：按胞分组。胞由 (轴 k, 符号 s) 标识；一个正方形面属于某胞当其 4 个顶点在轴 k 上都等于 s。
+  // 面：按胞分组。每个三维胞被超平面切出一个多边形，其边数 = 该胞中产生线段的面数。
   const faceSizes: number[] = [];
-  const dims = poly.vertices[0]?.length ?? 4;
-  for (let k = 0; k < dims; k++) {
-    for (const s of [-1, 1]) {
-      const sides = new Set<string>();
-      poly.faces.forEach((face, fi) => {
-        if (!face.every((vi) => Math.abs(poly.vertices[vi][k] - s) < 1e-9)) return;
-        const seg = slice.segments[faceSegmentIndex(slice, poly, fi)];
-        if (!seg) return;
-        const i = remap[seg[0]];
-        const j = remap[seg[1]];
-        if (i === j) return;
-        sides.add(i < j ? `${i}-${j}` : `${j}-${i}`);
-      });
-      if (sides.size >= 3) faceSizes.push(sides.size);
+  for (const cell of poly.cells) {
+    const sides = new Set<string>();
+    for (const fi of cell) {
+      const seg = slice.segments[faceSegmentIndex(slice, poly, fi)];
+      if (!seg) continue;
+      const i = remap[seg[0]];
+      const j = remap[seg[1]];
+      if (i === j) continue;
+      sides.add(i < j ? `${i}-${j}` : `${j}-${i}`);
     }
+    if (sides.size >= 3) faceSizes.push(sides.size);
   }
   faceSizes.sort((a, b) => a - b);
   return { vertices: kept.length, edges: edgeKeys.size, faces: faceSizes.length, faceSizes };
@@ -173,9 +169,9 @@ function faceSegmentIndex(slice: Slice4, poly: Polytope4, faceIndex: number): nu
     let si = 0;
     poly.faces.forEach((face, fi) => {
       const hits: number[] = [];
-      for (let k = 0; k < 4; k++) {
+      for (let k = 0; k < face.length; k++) {
         const i = face[k];
-        const j = face[(k + 1) % 4];
+        const j = face[(k + 1) % face.length];
         const ei = edgeIndexByKey.get(i < j ? i * 1024 + j : j * 1024 + i);
         if (ei === undefined) continue;
         const pi = slice.edgePoint[ei];
@@ -199,6 +195,8 @@ export function sectionName(sig: SectionSignature): string | null {
   if (v === 6 && e === 12) return '八面体';
   if (v === 10 && e === 15) return '五棱柱';
   // 三个 W 平面一般姿态下，中段 12v18e 的面型会在截角四面体与六棱柱之间连续变化（如 3,3,3,4,4,5,6,6）
+  if (v === 12 && e === 24 && fs === '3,3,3,3,3,3,3,3,4,4,4,4,4,4') return '立方八面体';
+  if (v === 24 && e === 36 && fs === '4,4,4,4,4,4,6,6,6,6,6,6,6,6') return '截角八面体';
   if (v === 12 && e === 18) return fs === '3,3,3,3,6,6,6,6' ? '截角四面体' : fs === '4,4,4,4,4,4,6,6' ? '六棱柱' : '十二顶点体';
   return null;
 }

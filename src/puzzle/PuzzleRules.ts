@@ -130,6 +130,23 @@ export function evaluateBridge(
   return { endpoint, anchor, distance, angleError, distanceOk, angleOk, satisfied: distanceOk && angleOk };
 }
 
+/** anyVertex 桥：对一个锚点，取全部顶点中距离最近者的评估结果。 */
+export function evaluateBridgeAnyVertex(
+  poly: Polytope4,
+  bridge: BridgeDef,
+  rotation: Rotation4D,
+  core: CoreTransform,
+  anchor: Vec3,
+  blend = 0,
+): BridgeEvaluation {
+  let best: BridgeEvaluation | null = null;
+  for (let i = 0; i < poly.vertices.length; i++) {
+    const e = evaluateBridge(bridge, vertexWorldPosition(poly, i, rotation, core, DEFAULT_PROJECTION, blend), anchor);
+    if (!best || e.distance < best.distance) best = e;
+  }
+  return best as BridgeEvaluation;
+}
+
 /** 点（只看 x/z）是否在 AABB 内，可带向内收缩的 margin。 */
 export function pointInAABBxz(p: Vec3, box: AABB, margin = 0): boolean {
   return (
