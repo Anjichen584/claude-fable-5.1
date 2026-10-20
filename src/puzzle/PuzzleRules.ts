@@ -12,7 +12,7 @@ import {
   type Vec3,
 } from '../math';
 import { DEFAULT_PROJECTION, applyTilt, type Tilt, type Vec4 } from '../math';
-import { DEFAULT_TOLERANCE, type AABB, type BridgeDef, type BridgeTolerance, type TargetRef } from './types';
+import { DEFAULT_TOLERANCE, W_LAYER_HALF, type AABB, type BridgeDef, type BridgeTolerance, type TargetRef } from './types';
 
 /** 核心的世界变换：投影结果 → 视角倾斜 → × scale + position。 */
 export interface CoreTransform {
@@ -160,6 +160,48 @@ export function pointInAABBxz(p: Vec3, box: AABB, margin = 0): boolean {
 export function pointInAnyAABBxz(p: Vec3, boxes: readonly AABB[], margin = 0): boolean {
   for (const b of boxes) if (pointInAABBxz(p, b, margin)) return true;
   return false;
+}
+
+/** 第六章：只保留与玩家 w 同层的 AABB。 */
+export function boxesAtW(boxes: readonly AABB[], w: number): AABB[] {
+  return boxes.filter((b) => Math.abs((b.w ?? 0) - w) <= W_LAYER_HALF + 1e-9);
+}
+
+/**
+ * 第六章：角色沿 W 从 w 向 target 滑动。按 steps 小步推进，每一步都要求脚下（同层）仍有地面，
+ * 否则停在最后一个合法位置并报告 blocked。这样不可能"跳过"中间层。
+ */
+export function slideW(position: Vec3, radius: number, w: number, target: number, boxes: readonly AABB[], steps = 4): { w: number; blocked: boolean } {
+  let cur = w;
+  for (let i = 1; i <= steps; i++) {
+    const wi = w + (target - w) * (i / steps);
+    if (!footprintWalkable(position, radius, boxesAtW(boxes, wi))) return { w: cur, blocked: true };
+    cur = wi;
+  }
+  if (Math.abs(cur) < 1e-6) cur = 0;
+  return { w: cur, blocked: false };
+}
+
+/** 当前 w 所在半层带内、离 w 最近的平台层中心（没有地面时返回 w 本身） */
+export function nearestLayer(boxes: readonly AABB[], w: number): number {
+  let best = w;
+  let bestD = Infinity;
+  for (const b of boxesAtW(boxes, w)) {
+    const d = Math.abs((b.w ?? 0) - w);
+    if (d < bestD) {
+      bestD = d;
+      best = b.w ?? 0;
+    }
+  }
+  return best;
+}
+
+/** 松开按键后，w 以 speed 回弹到最近的层中心（像弹簧一样提示"那边没有地面"） */
+export function settleW(w: number, boxes: readonly AABB[], speed: number, dt: number): number {
+  const target = nearestLayer(boxes, w);
+  const d = target - w;
+  if (Math.abs(d) <= speed * dt + 1e-9) return target;
+  return w + Math.sign(d) * speed * dt;
 }
 
 /**

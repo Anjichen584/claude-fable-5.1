@@ -78,6 +78,8 @@ export interface GameSnapshot {
   exitReady: boolean;
   hint: string | null;
   slice: { enabled: boolean; w0: number } | null;
+  /** 第六章：玩家自身的 w；未启用时 null */
+  playerW: { w: number; range: [number, number]; blocked: boolean; sliceFollows: boolean } | null;
   /** 核心多胞体（第五章起可能不是超立方体） */
   polytope: { kind: PolytopeKind; name: string; vertices: number; edges: number; cells: number };
   /** 投影方式；本关不可切换时 switchable=false（前三章仍显示透视） */
@@ -189,6 +191,10 @@ export class GameController {
 
     this.player.setPosition(level.playerStart);
     this.player.facing = Math.PI;
+    this.player.wEnabled = level.playerW?.enabled ?? false;
+    this.player.w = level.playerW?.initial ?? 0;
+    this.player.wRange = level.playerW?.range ?? [0, 0];
+    this.coreController.sliceFollowsPlayer = !!(level.playerW?.enabled && level.playerW.sliceFollows);
     this.player.group.visible = true;
 
     // 摄像机：放在玩家身后上方，看向出口方向
@@ -303,6 +309,11 @@ export class GameController {
       const camDir = new THREE.Vector3().subVectors(this.scene.controls.target, this.scene.camera.position);
       const fl = Math.hypot(camDir.x, camDir.z) || 1;
       this.player.update(dt, inp, [camDir.x / fl, camDir.z / fl], this.session.walkable(), t);
+      if (this.coreController.sliceFollowsPlayer && this.level.slice) {
+        // 第六章："你自己就是切片"：切片 w₀ 跟随玩家 w
+        const [lo, hi] = this.level.slice.range;
+        this.viewState.slice = { enabled: true, w0: Math.min(hi, Math.max(lo, this.player.w)) };
+      }
 
       const events = this.session.update({
         dt,
@@ -312,6 +323,7 @@ export class GameController {
         rotatedW,
         projectionBlend: this.viewState.projectionBlend,
         projectionMode: this.viewState.projectionMode,
+        playerW: this.player.w,
       });
       this.handleEvents(events);
 
@@ -327,7 +339,7 @@ export class GameController {
       // 磁性吸附：距离锚点 < 0.6 时旋转减速，最低到 30%
       this.coreController.speedScale = closeness > 0.7 ? Math.max(0.3, 1 - (closeness - 0.7) / 0.3 * 0.7) : 1;
       const rotatedAny = (Object.keys(rotation) as Plane[]).some((p) => rotation[p] !== before[p]);
-      this.audio.setRotating(rotatedAny, rotatedW);
+      this.audio.setRotating(rotatedAny || this.player.wMoving !== 0, rotatedW || this.player.wMoving !== 0);
 
       // 摄像机跟随：目标平滑移动，摄像机保持相对偏移
       const desired = new THREE.Vector3(this.player.position[0], this.player.position[1] + 0.6, this.player.position[2]);
@@ -336,7 +348,7 @@ export class GameController {
       this.scene.controls.target.lerp(desired, k);
       this.scene.camera.position.add(this.scene.controls.target.clone().sub(prev));
 
-      this.levelView.update(this.session, dt, t, this.scene.camera.position, this.viewState.slice.enabled ? this.viewState.slice.w0 : null);
+      this.levelView.update(this.session, dt, t, this.scene.camera.position, this.viewState.slice.enabled ? this.viewState.slice.w0 : null, this.player.w);
 
       if (this.hint && this.hintTimer > 0) {
         this.hintTimer -= dt;
@@ -353,7 +365,7 @@ export class GameController {
       this.scene.controls.target.lerp(new THREE.Vector3(0, 0, 0), 0.05);
     } else if (this.levelView && this.session) {
       // 暂停 / 完成：场景静止但仍渲染反馈
-      this.levelView.update(this.session, 0, t, this.scene.camera.position, this.viewState.slice.enabled ? this.viewState.slice.w0 : null);
+      this.levelView.update(this.session, 0, t, this.scene.camera.position, this.viewState.slice.enabled ? this.viewState.slice.w0 : null, this.player.w);
     }
 
     this.tesseract.update(this.viewState, t);
@@ -454,6 +466,7 @@ export class GameController {
       exitReady: s?.exitReady ?? false,
       hint: this.hint,
       slice: l?.slice ? { ...this.viewState.slice } : null,
+      playerW: this.player.wEnabled ? { w: this.player.w, range: [this.player.wRange[0], this.player.wRange[1]], blocked: this.player.wBlocked, sliceFollows: this.coreController.sliceFollowsPlayer } : null,
       polytope: { kind: this.poly.name as PolytopeKind, name: POLYTOPE_NAMES[this.poly.name as PolytopeKind], vertices: this.poly.vertices.length, edges: this.poly.edges.length, cells: this.poly.cells.length },
       projection: { mode: this.viewState.projectionMode, switchable: l?.core.projection?.switchable ?? false, blend: this.viewState.projectionBlend },
       fps: this.fps,

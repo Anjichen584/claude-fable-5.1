@@ -27,6 +27,8 @@ export class CoreController {
   sliceRange: readonly [number, number] = [-2.2, 2.2];
   /** 是否允许用 X 切换切片（关卡未启用切片时关闭） */
   allowSliceToggle = true;
+  /** 第六章：切片跟随玩家 w 时，禁用 , . 与 X */
+  sliceFollowsPlayer = false;
   /** 是否允许用 P 切换投影（第四章起） */
   allowProjectionToggle = false;
   /** 本帧是否切换了投影（供音效/提示） */
@@ -50,7 +52,7 @@ export class CoreController {
     KEYMAP.selectPlane.forEach((code, i) => {
       if (inp.wasPressed(code) && this.allowedPlanes.has(PLANES[i])) s.activePlane = PLANES[i];
     });
-    if (this.allowSliceToggle && inp.wasPressed(KEYMAP.toggleSlice)) s.slice = { ...s.slice, enabled: !s.slice.enabled };
+    if (this.allowSliceToggle && !this.sliceFollowsPlayer && inp.wasPressed(KEYMAP.toggleSlice)) s.slice = { ...s.slice, enabled: !s.slice.enabled };
     this.projectionToggled = false;
     if (this.allowProjectionToggle && inp.wasPressed(KEYMAP.toggleProjection)) {
       s.projectionMode = s.projectionMode === 'perspective' ? 'orthographic' : 'perspective';
@@ -79,7 +81,7 @@ export class CoreController {
     }
 
     const sd = axis(KEYMAP.slice);
-    if (sd !== 0 && s.slice.enabled) {
+    if (sd !== 0 && s.slice.enabled && !this.sliceFollowsPlayer) {
       const w0 = Math.min(this.sliceRange[1], Math.max(this.sliceRange[0], s.slice.w0 + sd * SLICE_SPEED * dt));
       s.slice = { ...s.slice, w0 };
     }

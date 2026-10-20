@@ -1,6 +1,6 @@
 import { DEFAULT_PROJECTION, distance3, involvesW, matchesShape, rotateAll, sectionSignature, sliceHyperplane, type Plane, type Polytope4, type Rotation4D, type SectionSignature, type Vec3 } from '../math';
-import { bridgePlanes, combineDualEvaluation, evaluateBridge, evaluateBridgeAnyVertex, pointInAnyAABBxz, resolveAnchor, resolveAnchor2, toleranceOf, vertexWorldPosition, type BridgeEvaluation } from './PuzzleRules';
-import type { AABB, BridgeDef, GateDef, LevelDef, NodeDef, TargetRef } from './types';
+import { boxesAtW, bridgePlanes, combineDualEvaluation, evaluateBridge, evaluateBridgeAnyVertex, pointInAnyAABBxz, resolveAnchor, resolveAnchor2, toleranceOf, vertexWorldPosition, type BridgeEvaluation } from './PuzzleRules';
+import { W_LAYER_HALF, type AABB, type BridgeDef, type GateDef, type LevelDef, type NodeDef, type TargetRef } from './types';
 import type { ProjectionMode } from '../math';
 
 export interface BridgeStatus {
@@ -44,6 +44,8 @@ export interface PuzzleFrameInput {
   projectionBlend?: number;
   /** 当前投影方式（用于 projection:<mode> 提示） */
   projectionMode?: ProjectionMode;
+  /** 第六章：玩家自身的 w（默认 0）。到达类节点与出口要求同层。 */
+  playerW?: number;
 }
 
 /**
@@ -94,8 +96,13 @@ export class PuzzleSession {
     return out;
   }
 
-  isWalkable(p: Vec3, margin = 0): boolean {
-    return pointInAnyAABBxz(p, this.walkable(), margin);
+  /** 第六章：玩家 w 所在层的可行走区域 */
+  walkableAt(w: number): AABB[] {
+    return boxesAtW(this.walkable(), w);
+  }
+
+  isWalkable(p: Vec3, margin = 0, w = 0): boolean {
+    return pointInAnyAABBxz(p, this.walkableAt(w), margin);
   }
 
   anchorOf(bridge: BridgeDef): Vec3 {
@@ -165,7 +172,8 @@ export class PuzzleSession {
       if (!n.visible) continue;
       const trig = n.def.trigger;
       if (trig.kind === 'reach') {
-        if (distance3(input.playerPosition, n.def.position) <= trig.radius) {
+        const sameLayer = Math.abs((trig.w ?? 0) - (input.playerW ?? 0)) <= W_LAYER_HALF + 1e-9;
+        if (sameLayer && distance3(input.playerPosition, n.def.position) <= trig.radius) {
           n.active = true;
           this.activate(n.def.id, 'node');
         }
@@ -211,7 +219,8 @@ export class PuzzleSession {
       this.pendingEvents.push({ type: 'exitReady' });
       this.fireHints('exitReady');
     }
-    if (this.exitReady && distance3(input.playerPosition, this.level.exit.position) <= this.level.exit.radius) {
+    const exitSameLayer = Math.abs((this.level.exit.w ?? 0) - (input.playerW ?? 0)) <= W_LAYER_HALF + 1e-9;
+    if (this.exitReady && exitSameLayer && distance3(input.playerPosition, this.level.exit.position) <= this.level.exit.radius) {
       this.completed = true;
       this.pendingEvents.push({ type: 'levelComplete' });
     }

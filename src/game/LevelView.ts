@@ -40,6 +40,26 @@ interface GateVisual {
   openT: number;
 }
 
+interface PlatformVisual {
+  w: number;
+  mesh: THREE.Mesh;
+  edgeMat: THREE.LineBasicMaterial;
+  gridMat: THREE.Material;
+}
+
+/** 第六章：W 层着色——w > 0 偏紫，w < 0 偏金，0 青色 */
+function layerColor(w: number): THREE.Color {
+  const t = Math.max(-1, Math.min(1, w / 1.5));
+  return t >= 0 ? C_CYAN.clone().lerp(C_PURPLE, t) : C_CYAN.clone().lerp(C_GOLD, -t);
+}
+/** 与玩家 w 的层距离 → 可见度 0.12..1 */
+function layerVisibility(w: number, playerW: number): number {
+  const d = Math.abs(w - playerW);
+  return d <= 0.5 ? 1 : Math.max(0.12, 1 - (d - 0.5) / 0.6);
+}
+/** 不同 W 层的视觉 Y 偏移，避免重叠轮廓完全重合 */
+const LAYER_Y = 0.05;
+
 interface NodeVisual {
   id: string;
   gem: THREE.Mesh;
@@ -59,9 +79,16 @@ export class LevelView {
   private readonly bridges = new Map<string, BridgeVisual>();
   private readonly nodes = new Map<string, NodeVisual>();
   private readonly gates = new Map<string, GateVisual>();
+  private readonly platforms: PlatformVisual[] = [];
+  private readonly hasLayers: boolean;
+  private exitW = 0;
+  private readonly nodeW = new Map<string, number>();
   private portal!: { ring: THREE.Mesh; ringMat: THREE.MeshBasicMaterial; disc: THREE.Mesh; discMat: THREE.MeshBasicMaterial; glow: THREE.Sprite; group: THREE.Group };
 
   constructor(level: LevelDef) {
+    this.hasLayers = !!level.playerW?.enabled;
+    this.exitW = level.exit.w ?? 0;
+    for (const n of level.nodes) if (n.trigger.kind === 'reach' && n.trigger.w) this.nodeW.set(n.id, n.trigger.w);
     for (const p of level.platforms) this.addPlatform(p);
     for (const b of level.bridges) this.addBridge(b.id, b.walkable, b.vertex2 !== undefined ? 2 : 1);
     for (const n of level.nodes) this.addNode(n.id, n.position);
@@ -114,23 +141,46 @@ export class LevelView {
     const center = aabbCenter(box);
     const geom = new THREE.BoxGeometry(size[0], size[1], size[2]);
     const mat = new THREE.MeshStandardMaterial({ color: '#0b1430', roughness: 0.85, metalness: 0.2, emissive: new THREE.Color('#071022'), emissiveIntensity: 0.6 });
+    const w = box.w ?? 0;
+    const yOff = this.hasLayers ? w * LAYER_Y : 0;
     const mesh = new THREE.Mesh(geom, mat);
-    mesh.position.set(center[0], center[1], center[2]);
+    mesh.position.set(center[0], center[1] + yOff, center[2]);
     this.group.add(mesh);
 
-    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geom), new THREE.LineBasicMaterial({ color: C_CYAN, transparent: true, opacity: 0.55 }));
+    const edgeMat = new THREE.LineBasicMaterial({ color: this.hasLayers ? layerColor(w) : C_CYAN, transparent: true, opacity: 0.55 });
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geom), edgeMat);
     edges.position.copy(mesh.position);
     this.group.add(edges);
 
     // 顶面网格
     const grid = new THREE.GridHelper(Math.max(size[0], size[2]), Math.round(Math.max(size[0], size[2]) * 2), 0x1d3b6e, 0x14284d);
-    grid.position.set(center[0], box.max[1] + 0.005, center[2]);
+    grid.position.set(center[0], box.max[1] + 0.005 + yOff, center[2]);
     grid.scale.set(size[0] / Math.max(size[0], size[2]), 1, size[2] / Math.max(size[0], size[2]));
     (grid.material as THREE.Material).transparent = true;
     (grid.material as THREE.Material).opacity = 0.5;
     this.group.add(grid);
 
     this.disposables.push(geom, mat, edges.geometry, edges.material as THREE.Material, grid.geometry, grid.material as THREE.Material);
+    this.platforms.push({ w, mesh, edgeMat, gridMat: grid.material as THREE.Material });
+  }
+
+  /** 第六章：按玩家 w 决定各层平台/闸门/出口的可见度 */
+  private updateLayers(playerW: number): void {
+    if (!this.hasLayers) return;
+    for (const p of this.platforms) {
+      const v = layerVisibility(p.w, playerW);
+      p.mesh.visible = v >= 0.99;
+      p.edgeMat.opacity = 0.55 * v + (v < 0.99 ? 0.1 : 0);
+      p.gridMat.opacity = 0.5 * v;
+    }
+    for (const g of this.gates.values()) {
+      const v = layerVisibility(g.box.w ?? 0, playerW);
+      g.deck.visible = g.deck.visible && v >= 0.99;
+      (g.ghost.material as THREE.LineDashedMaterial).opacity *= v;
+    }
+    const ev = layerVisibility(this.exitW, playerW);
+    this.portal.group.visible = ev > 0.2;
+    this.portal.ringMat.opacity = 0.9 * ev;
   }
 
   // ---------------------------------------------------------------- 桥
@@ -212,7 +262,7 @@ export class LevelView {
   // ---------------------------------------------------------------- 出口
   private addPortal(pos: Vec3): void {
     const group = new THREE.Group();
-    group.position.set(pos[0], pos[1] + 1.0, pos[2]);
+    group.position.set(pos[0], pos[1] + 1.0 + (this.hasLayers ? this.exitW * LAYER_Y : 0), pos[2]);
     const ringMat = new THREE.MeshBasicMaterial({ color: C_DIM, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.85, 0.05, 12, 64), ringMat);
     group.add(ring);
@@ -228,11 +278,12 @@ export class LevelView {
   }
 
   // ---------------------------------------------------------------- 每帧
-  update(session: PuzzleSession, dt: number, time: number, cameraPos: THREE.Vector3, sliceW0: number | null = null): void {
+  update(session: PuzzleSession, dt: number, time: number, cameraPos: THREE.Vector3, sliceW0: number | null = null, playerW = 0): void {
     for (const b of session.bridges) this.updateBridge(b, dt, time);
-    for (const n of session.nodes) this.updateNode(n, time, sliceW0);
+    for (const n of session.nodes) this.updateNode(n, time, sliceW0, playerW);
     for (const g of session.gates) this.updateGate(g, dt, time);
     this.updatePortal(session.exitReady, dt, time, cameraPos);
+    this.updateLayers(playerW);
   }
 
   private updateBridge(b: BridgeStatus, dt: number, time: number): void {
@@ -309,9 +360,11 @@ export class LevelView {
     sk.beamMat.color.copy(e.satisfied ? C_CYAN : C_GOLD);
   }
 
-  private updateNode(n: NodeStatus, time: number, sliceW0: number | null): void {
+  private updateNode(n: NodeStatus, time: number, sliceW0: number | null, playerW = 0): void {
     const v = this.nodes.get(n.def.id);
     if (!v) return;
+    const nodeW = this.nodeW.get(n.def.id) ?? 0;
+    const layerV = this.hasLayers ? layerVisibility(nodeW, playerW) : 1;
     const col = (n.active ? C_GOLD : n.visible ? C_PURPLE : C_DIM).clone();
     // 切片节点：只在切片位置接近它所在的 w 区间时显形
     let reveal = 1;
@@ -328,6 +381,7 @@ export class LevelView {
       const t = THREE.MathUtils.clamp(n.hold / hs, 0, 1);
       if (t > 0) col.copy(C_PURPLE).lerp(C_GOLD, t);
     }
+    reveal *= layerV;
     v.gem.visible = reveal > 0.02 || n.active;
     v.gemMat.emissive.copy(col);
     v.gemMat.emissiveIntensity = (n.active ? 1.4 : n.visible ? 0.6 : 0.15) * reveal;

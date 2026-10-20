@@ -728,7 +728,145 @@ export const LEVEL_15: LevelDef = {
   ],
 };
 
-export const LEVELS: readonly LevelDef[] = [LEVEL_1, LEVEL_2, LEVEL_3, LEVEL_4, LEVEL_5, LEVEL_6, LEVEL_7, LEVEL_8, LEVEL_9, LEVEL_10, LEVEL_11, LEVEL_12, LEVEL_13, LEVEL_14, LEVEL_15];
+// ===========================================================================
+// 第六章 Crossing Over 跨越
+// 概念：玩家自身获得 W 坐标。平台可以位于不同的 w 层（AABB.w）；|玩家 w − 平台 w| ≤ 0.5 才可行走。
+//   I / K 沿 W 滑动，只能滑到脚下仍有同层地面的位置（不能跳层）。
+//   三维里"不相连"的两块平台，可以经由另一个 w 层连起来。
+//   章末："你自己就是切片"——切片 w₀ 跟随玩家 w，形状节点靠移动自己来满足。
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Level 16 — Step Aside：第一次沿 W 移动
+// ---------------------------------------------------------------------------
+export const LEVEL_16: LevelDef = {
+  id: 'stepaside',
+  index: 16,
+  chapter: 6,
+  title: 'Step Aside',
+  subtitle: '侧步',
+  platforms: [
+    { min: [-2, -T, 2.5], max: [2, 0, 7] },
+    { min: [-2, -T, -7], max: [2, 0, -2.5] },
+    // w = +1 层：一条横跨缺口的走廊，只与起点平台重叠一小段
+    { min: [-1, -T, -4], max: [1, 0, 4], w: 1 },
+  ],
+  playerStart: [0, 0, 5],
+  core: {
+    position: [0, 2.6, 0],
+    scale: 1.0,
+    initialRotation: rot({ XW: deg(20) }),
+    tilt: { pitch: 0.25, yaw: 0.5 },
+    allowedPlanes: [],
+  },
+  bridges: [],
+  nodes: [],
+  gates: [],
+  exit: { position: [0, 0, -5.5], radius: 0.9, requires: [] },
+  playerW: { enabled: true, initial: 0, range: [-1.5, 1.5] },
+  hints: [
+    { id: 'h-start', when: 'start', text: '从今天起，你也有 w 坐标了。按 I / K 沿 W 移动——只能滑到脚下仍有地面的地方。淡紫色的轮廓是 w = +1 层的平台。' },
+    { id: 'h-w', when: 'noW:6', text: '站到起点平台靠近缺口的一端（紫色轮廓覆盖的地方），按住 I 滑到 w = +1，沿走廊走过缺口，再按 K 滑回 w = 0。' },
+    { id: 'h-exit', when: 'exitReady', text: '出口在 w = 0 层。' },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Level 17 — Through：在另一层触发节点，桥在本层
+// ---------------------------------------------------------------------------
+const L17_BASE = rot({ XZ: 0.3 });
+export const LEVEL_17: LevelDef = {
+  id: 'through',
+  index: 17,
+  chapter: 6,
+  title: 'Through',
+  subtitle: '穿过',
+  platforms: [
+    { min: [-2, -T, 4], max: [2, 0, 8] },
+    { min: [-2.5, -T, -1.5], max: [2.5, 0, 1.5] },
+    { min: [-2, -T, -8], max: [2, 0, -4] },
+    // w = +1：从起点通到中间平台的走廊
+    { min: [-1, -T, -1.5], max: [1, 0, 5], w: 1 },
+    // w = −1：中间平台下方的一小块"暗室"，节点在这里
+    { min: [-1.5, -T, -1.5], max: [1.5, 0, 1.5], w: -1 },
+  ],
+  playerStart: [0, 0, 6],
+  core: {
+    position: [0, 3.1, 0],
+    scale: 1.2,
+    initialRotation: L17_BASE,
+    tilt: { pitch: 0.3, yaw: 0.5 },
+    allowedPlanes: ['XW'],
+  },
+  bridges: [
+    {
+      id: 'bridge-1',
+      start: [0, 0, -1.5],
+      walkable: { min: [-0.7, -T, -4.1], max: [0.7, 0, -1.4] },
+      vertex: 1,
+      plane: 'XW',
+      solution: { ...L17_BASE, XW: deg(110) },
+      requires: ['key'],
+    },
+  ],
+  nodes: [{ id: 'key', position: [0, 0, 0], trigger: { kind: 'reach', radius: 0.9, w: -1 } }],
+  gates: [],
+  exit: { position: [0, 0, -6.5], radius: 0.9, requires: ['bridge-1'] },
+  playerW: { enabled: true, initial: 0, range: [-1.5, 1.5] },
+  hints: [
+    { id: 'h-start', when: 'start', text: '先经 w = +1 的走廊到中间平台。桥的锚点还没出现——它的钥匙在 w = −1 层，中间平台的正下方。' },
+    { id: 'h-key', when: 'activated:key', text: '钥匙节点激活，锚点出现在 w = 0 层。滑回 w = 0，用 XW（Q / E）对齐。' },
+    { id: 'h-done', when: 'activated:bridge-1', text: '同一个位置、不同的 w：三维里看是同一块地，四维里是三个房间。' },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Level 18 — You Are the Slice：切片跟随玩家 w（章末综合）
+// ---------------------------------------------------------------------------
+const TETRA_6 = { vertices: 4, edges: 6 };
+const TWELVE_6 = { vertices: 12, edges: 18 };
+export const LEVEL_18: LevelDef = {
+  id: 'youaretheslice',
+  index: 18,
+  chapter: 6,
+  title: 'You Are the Slice',
+  subtitle: '你就是切片',
+  platforms: [
+    // 起点：三层叠放，供玩家沿 W 爬升到 w = 2
+    { min: [-2, -T, 4], max: [2, 0, 8] },
+    { min: [-2, -T, 4], max: [2, 0, 8], w: 1 },
+    { min: [-2, -T, 4], max: [2, 0, 8], w: 2 },
+    // 对岸：w = 2 层的平台，再逐层下到 w = 0
+    { min: [-2, -T, -8], max: [2, 0, -4], w: 2 },
+    { min: [-2, -T, -8], max: [2, 0, -4], w: 1 },
+    { min: [-2, -T, -8], max: [2, 0, -4] },
+  ],
+  playerStart: [0, 0, 6],
+  core: {
+    position: [0, 3.1, 0],
+    scale: 1.2,
+    initialRotation: rot({}),
+    tilt: { pitch: 0.3, yaw: 0.4 },
+    allowedPlanes: ['XY', 'XZ', 'YZ', 'XW', 'YW', 'ZW'],
+  },
+  bridges: [],
+  nodes: [
+    { id: 'tetra', position: [0, 0, 2.7], trigger: { kind: 'shape', shape: TETRA_6, label: '四面体 4v · 6e（在你的 w 处）', holdSeconds: 0.2 } },
+    { id: 'twelve', position: [0, 0, -2.7], trigger: { kind: 'shape', shape: TWELVE_6, label: '十二顶点 12v · 18e（在你的 w 处）', holdSeconds: 0.5 }, requires: ['tetra'] },
+  ],
+  gates: [{ id: 'gate-1', start: [0, 0, 4], walkable: { min: [-0.7, -T, -4.1], max: [0.7, 0, 4.1], w: 2 }, requires: ['tetra'] }],
+  exit: { position: [0, 0, -6.5], radius: 0.9, requires: ['twelve'] },
+  slice: { enabled: true, initial: 0, range: [-2.2, 2.2] },
+  playerW: { enabled: true, initial: 0, range: [-2.5, 2.5], sliceFollows: true },
+  hints: [
+    { id: 'h-start', when: 'start', text: '这一关切片 w₀ 就是你的 w：你站在哪一层，就看到核心在那一层的截面。闸门在 w = 2 层，要求四面体。' },
+    { id: 'h-w', when: 'noW:8', text: '四面体只在顶点附近：三个 W 平面都转（Q/E、Z/C、6 + [ ]），然后按住 I 沿 W 向上爬——经过 w ≈ 1.2–2 时截面会变成四面体。' },
+    { id: 'h-tetra', when: 'activated:tetra', text: '闸门开在 w = 2 层。走过去，再逐层下到 w = 0：出口要求你站在十二顶点截面所在的层。' },
+    { id: 'h-done', when: 'activated:twelve', text: '你刚刚用自己的身体扫描了一个四维物体。' },
+  ],
+};
+
+export const LEVELS: readonly LevelDef[] = [LEVEL_1, LEVEL_2, LEVEL_3, LEVEL_4, LEVEL_5, LEVEL_6, LEVEL_7, LEVEL_8, LEVEL_9, LEVEL_10, LEVEL_11, LEVEL_12, LEVEL_13, LEVEL_14, LEVEL_15, LEVEL_16, LEVEL_17, LEVEL_18];
 
 export function levelByIndex(index: number): LevelDef | undefined {
   return LEVELS.find((l) => l.index === index);

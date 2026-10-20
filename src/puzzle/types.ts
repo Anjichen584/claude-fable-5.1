@@ -4,7 +4,12 @@ import type { Plane, PolytopeKind, ProjectionMode, Rotation4D, ShapeRequirement,
 export interface AABB {
   min: Vec3;
   max: Vec3;
+  /** 第六章：所在的 W 层（默认 0）。玩家 w 与之相差 ≤ W_LAYER_HALF 时才可行走。 */
+  w?: number;
 }
+
+/** W 层的半宽：|玩家 w − 平台 w| ≤ 0.5 视为同层 */
+export const W_LAYER_HALF = 0.5;
 
 /** 桥的目标引用：顶点下标，或核心局部坐标系里的四维点。 */
 export type TargetRef = number | Vec4;
@@ -63,7 +68,7 @@ export interface BridgeDef {
 }
 
 export type NodeTrigger =
-  | { kind: 'reach'; radius: number }
+  | { kind: 'reach'; radius: number; /** 第六章：节点所在 W 层（默认 0） */ w?: number }
   | { kind: 'slice'; range: [number, number]; holdSeconds?: number }
   /** 第三章：当前切面截面的形状满足要求（顶点/边数签名）并持续 holdSeconds */
   | { kind: 'shape'; shape: ShapeRequirement; label: string; holdSeconds?: number; /** 额外要求切片位置落在此区间（第五章："正中也是…"） */ w0Range?: [number, number] };
@@ -148,7 +153,12 @@ export interface LevelDef {
   bridges: BridgeDef[];
   nodes: NodeDef[];
   gates?: GateDef[];
-  exit: { position: Vec3; radius: number; requires: string[] };
+  exit: { position: Vec3; radius: number; requires: string[]; /** 第六章：出口所在 W 层（默认 0） */ w?: number };
   slice?: { enabled: boolean; initial: number; range: [number, number] };
+  /**
+   * 第六章：玩家自身获得 W 坐标。I / K 沿 W 移动（只能滑到脚下有同层地面的位置）；
+   * sliceFollows 时切片 w₀ = 玩家 w（"你自己就是切片"）。
+   */
+  playerW?: { enabled: boolean; initial: number; range: [number, number]; sliceFollows?: boolean };
   hints: HintDef[];
 }

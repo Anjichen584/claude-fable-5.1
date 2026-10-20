@@ -1,20 +1,37 @@
 import * as THREE from 'three';
 import type { Vec3 } from '../math';
 import type { AABB } from '../puzzle/types';
-import { footprintWalkable } from '../puzzle/PuzzleRules';
+import { boxesAtW, footprintWalkable, settleW, slideW } from '../puzzle/PuzzleRules';
 import type { Input } from './Input';
 
 export const PLAYER_SPEED = 3.6;
 export const PLAYER_RADIUS = 0.22;
+/** 第六章：沿 W 移动的速度（w / s） */
+export const PLAYER_W_SPEED = 1.4;
+export const KEY_W_PLUS = 'KeyI';
+export const KEY_W_MINUS = 'KeyK';
 
 /**
  * 角色：在 XZ 平面上沿可行走 AABB 移动。相对摄像机朝向的 WASD / 方向键。
  * 没有重力与坠落——不在可行走区域的移动直接被阻止（按轴分离以便贴边滑动）。
  */
+const COLOR_W0 = new THREE.Color('#38e8ff');
+const COLOR_WPOS = new THREE.Color('#b56bff');
+const COLOR_WNEG = new THREE.Color('#ffd166');
+
 export class PlayerController {
   readonly group = new THREE.Group();
   position: [number, number, number] = [0, 0, 0];
   facing = Math.PI; // 朝 -z
+  /** 第六章：玩家自身的 w 坐标 */
+  w = 0;
+  /** W 移动是否启用及范围（关卡设置） */
+  wEnabled = false;
+  wRange: readonly [number, number] = [0, 0];
+  /** 本帧是否正在沿 W 移动（+1 / −1 / 0），供音效与 HUD */
+  wMoving = 0;
+  /** 本帧沿 W 的移动被"脚下没有地面"挡住 */
+  wBlocked = false;
   private readonly body: THREE.Mesh;
   private readonly glow: THREE.Sprite;
   private readonly ring: THREE.Mesh;
@@ -56,7 +73,28 @@ export class PlayerController {
   /**
    * @param forward 摄像机的水平前向（已归一化的 [x, z]），"W" 沿它移动
    */
-  update(dt: number, input: Input, forward: readonly [number, number], walkable: readonly AABB[], time: number): void {
+  /**
+   * @param walkable 全部可行走 AABB（含各 W 层）；按玩家 w 过滤后使用
+   */
+  update(dt: number, input: Input, forward: readonly [number, number], allWalkable: readonly AABB[], time: number): void {
+    // ---- 第六章：沿 W 滑动。只能滑到脚下仍有同层地面的位置（按小步推进，避免跳过中间层）
+    this.wMoving = 0;
+    this.wBlocked = false;
+    if (this.wEnabled) {
+      const dir = (input.isDown(KEY_W_PLUS) ? 1 : 0) - (input.isDown(KEY_W_MINUS) ? 1 : 0);
+      if (dir !== 0) {
+        this.wMoving = dir;
+        const target = Math.min(this.wRange[1], Math.max(this.wRange[0], this.w + dir * PLAYER_W_SPEED * dt));
+        const r = slideW(this.position, PLAYER_RADIUS, this.w, target, allWalkable);
+        this.w = r.w;
+        this.wBlocked = r.blocked;
+      } else {
+        // 松手回弹到最近的层中心
+        this.w = settleW(this.w, allWalkable, PLAYER_W_SPEED * 2, dt);
+      }
+    }
+    const walkable = this.wEnabled ? boxesAtW(allWalkable, this.w) : allWalkable;
+
     let ix = 0;
     let iz = 0;
     if (input.isDown('KeyW') || input.isDown('ArrowUp')) iz -= 1;
@@ -92,6 +130,18 @@ export class PlayerController {
     const bob = this.moving ? Math.sin(time * 14) * 0.03 : Math.sin(time * 2) * 0.015;
     this.body.position.y = 0.47 + bob;
     this.ring.scale.setScalar(1 + Math.sin(time * 3) * 0.05);
+    // 第六章：按 w 着色——w > 0 偏紫，w < 0 偏金，w = 0 青色
+    if (this.wEnabled) {
+      const t = Math.max(-1, Math.min(1, this.w / 1.5));
+      const c = t >= 0 ? COLOR_W0.clone().lerp(COLOR_WPOS, t) : COLOR_W0.clone().lerp(COLOR_WNEG, -t);
+      (this.body.material as THREE.MeshStandardMaterial).emissive.copy(c);
+      (this.glow.material as THREE.SpriteMaterial).color.copy(c);
+      (this.ring.material as THREE.MeshBasicMaterial).color.copy(c);
+    } else {
+      (this.body.material as THREE.MeshStandardMaterial).emissive.copy(COLOR_W0);
+      (this.glow.material as THREE.SpriteMaterial).color.copy(COLOR_W0);
+      (this.ring.material as THREE.MeshBasicMaterial).color.copy(COLOR_W0);
+    }
   }
 
   dispose(): void {

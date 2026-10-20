@@ -41,7 +41,8 @@ describe.each(LEVELS.map((l) => [l.id, l] as const))('关卡 %s', (_id, level) =
     for (const g of level.gates ?? []) for (const r of g.requires) expect(ids.has(r)).toBe(true);
     for (const r of level.exit.requires) expect(ids.has(r)).toBe(true);
     // 每关必须有通路（桥或闸门），且出口的前置最终可达
-    expect(level.bridges.length + (level.gates?.length ?? 0)).toBeGreaterThan(0);
+    // 第六章起，玩家自身的 W 移动本身就是通路（平台分层），可以没有桥和闸门
+    expect(level.bridges.length + (level.gates?.length ?? 0) + (level.playerW?.enabled ? 1 : 0)).toBeGreaterThan(0);
   });
 
   describe.each(level.bridges.map((b) => [b.id, b] as const))('桥 %s', (_bid, bridge) => {

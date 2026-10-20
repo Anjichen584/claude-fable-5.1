@@ -48,6 +48,15 @@ export const CHAPTERS: readonly ChapterDef[] = [
     outro: '十六胞体、二十四胞体、对称。超立方体不是四维的全部：对偶把立方体换成八面体，而二十四胞体根本没有三维的影子。你已经能在不认识的物体上用同样的方法。',
     levels: LEVELS.filter((l) => l.chapter === 5),
   },
+  {
+    index: 6,
+    id: 'crossing',
+    title: 'Crossing Over',
+    subtitle: '跨越',
+    concept: '你自己获得 W 坐标：平台分层，沿 W 移动即可到达三维里不相连的地方',
+    outro: '侧步、穿过、你就是切片。前五天你一直站在三维里转动四维；今天你自己迈出了第四个方向。那些在三维里断开的路，从来都是连着的。',
+    levels: LEVELS.filter((l) => l.chapter === 6),
+  },
 ];
 
 export function chapterOf(level: LevelDef): ChapterDef {

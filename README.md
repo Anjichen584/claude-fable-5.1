@@ -21,7 +21,7 @@
 3. [四维数学](#3-四维数学)
 4. [解谜规则](#4-解谜规则)
 5. [一周游玩流程（七章）](#5-一周游玩流程七章)
-6. [MVP 关卡设计（第一章）](#6-mvp-关卡设计第一章) · [6b. 第二章](#6b-第二章关卡设计double-rotation-双旋) · [6c. 第三章](#6c-第三章关卡设计cross-sections-截面) · [6d. 第四章](#6d-第四章关卡设计shadows-投影之辨) · [6e. 第五章](#6e-第五章关卡设计other-polytopes-异形)
+6. [MVP 关卡设计（第一章）](#6-mvp-关卡设计第一章) · [6b. 第二章](#6b-第二章关卡设计double-rotation-双旋) · [6c. 第三章](#6c-第三章关卡设计cross-sections-截面) · [6d. 第四章](#6d-第四章关卡设计shadows-投影之辨) · [6e. 第五章](#6e-第五章关卡设计other-polytopes-异形) · [6f. 第六章](#6f-第六章关卡设计crossing-over-跨越)
 7. [架构](#7-架构)
 8. [三天开发计划（MVP）](#8-三天开发计划mvp)
 9. [验收清单](#9-验收清单)
@@ -179,7 +179,7 @@ s = d / (d − w)
 | Day 3 | **已实现**：截面签名 `sectionSignature`（顶点/边/面/面型）、形状节点（签名匹配并保持）、闸门 `gates`（节点满足即成路）、HUD 实时截面名 |
 | Day 4 | **已实现**：`projectBlend` 透视/正交连续混合、P 键切换与过渡动画、`BridgeDef.projection`（锚点所属投影，判定用当前投影）、`projection:<mode>` 提示 |
 | Day 5 | **已实现**：泛型 `Polytope4`（多边形面 + 胞）、`createCell16` / `createCell24`、截面签名按胞分组、`core.polytope`、`anyVertex` 桥、形状节点 `w0Range` |
-| Day 6 | 玩家四维位置、按 w 层分组的可行走 AABB、W 移动的视觉表现（当前层实线、相邻层半透明） |
+| Day 6 | **已实现**：`PlayerController.w`（I / K）、`AABB.w` + `boxesAtW` 按层过滤可行走面、`slideW` 小步推进不跳层 + 松手回弹、`reach` 节点与出口的同层判定、`playerW.sliceFollows`（切片 w₀ = 玩家 w）、分层平台视觉（当前层实体、其他层按 w 着色的淡轮廓） |
 | Day 7 | 大型关卡数据、路径回放 |
 
 MVP 只实现 Day 1，但 `math` / `puzzle` 的接口按整个表设计（旋转、投影、切片都是对任意四维顶点集合的泛型操作，不绑定 tesseract）。
@@ -333,6 +333,28 @@ HUD 左栏新增"截面"行：实时显示截面名称与 `v · e · f`。切片
 2. 任意顶点桥不能复用"纯三维旋转够不着"的强下界——24 个顶点总有一个离锚点不远。靠搜索挑解角，要求最小距离 > 1.5 × 容差。
 3. 章末关若先锁桥再要"顶点正对 W"的截面，锁定的平面会让顶点正对 W 变得不可能；所以顺序是**先截面、后桥**。
 
+## 6f. 第六章关卡设计（Crossing Over 跨越）
+
+**概念**：前五章玩家只转动四维物体，自己始终在三维里。本章玩家自身获得 **w 坐标**：平台可以位于不同的 w 层（`AABB.w`，默认 0），|玩家 w − 平台 w| ≤ 0.5 才算同层、才能行走。按 **I / K** 沿 W 滑动（1.4 w/s），只能滑到脚下仍有同层地面的位置：`slideW` 按 4 个小步推进并逐步检查脚印，所以**不可能跳过中间层**；松手后 `settleW` 把 w 回弹到最近的层中心（像弹簧一样提示"那边没有地面"）。三维里"不相连"的两块平台，经由另一个 w 层连起来。
+
+**系统**：`AABB.w`、`W_LAYER_HALF = 0.5`、`boxesAtW`、`slideW` / `nearestLayer` / `settleW`（纯函数，在 `puzzle/PuzzleRules.ts`）、`PuzzleSession.walkableAt(w)` / `isWalkable(p, margin, w)`、`PuzzleFrameInput.playerW`、`reach` 节点与出口的 `w`、`LevelDef.playerW { enabled, initial, range, sliceFollows }`。`sliceFollows` 为真时 `CoreController.sliceFollowsPlayer` 禁用 `, .` 与 `X`，每帧 `slice.w0 = player.w`。HUD 新增"你的 w"仪表（紫 = +，金 = −，脚下无地面时提示）；角色随 w 着色；`LevelView` 中非当前层的平台只画按 w 着色的淡轮廓并沿 Y 微微错开，当前层实体显示。
+
+### Level 16 — Step Aside（侧步）
+- w = 0 两块平台中间有缺口；w = +1 一条走廊横跨缺口，只与两端平台重叠一小段。无旋转、无桥：站到重叠处按 I → 沿走廊走 → 按 K 回到 w = 0。在起点后端按 I 会被挡在 0.5 并回弹。
+
+### Level 17 — Through（穿过）
+- 起点 → w = +1 走廊 → 中间平台（w = 0）。桥的钥匙节点在 **w = −1**（中间平台正下方的"暗室"），`reach` 节点带 `w: -1`，站在 w = 0 的同一位置不会触发。回到 w = 0 后用 XW 110°（顶点 1）锁桥 → 出口（w = 0）。
+
+### Level 18 — You Are the Slice（你就是切片，章末综合）
+- `sliceFollows`：切片 w₀ 就是玩家 w。起点三层叠放（w 0/1/2），对岸同样三层。三个 W 平面转到 XW 35° / YW 40° / ZW 30° 后，沿 W 向上爬——经过 |w₀| ∈ [1.22, 1.98] 时截面是四面体（`holdSeconds: 0.2`，边滑边扫就能触发）→ 闸门（w = 2）开 → 走过去 → 逐层下到 w = 0 → 截面十二顶点 → 出口。
+
+### 踩坑记录（第六章）
+1. 方向键已用于行走，W 移动用 I / K。
+2. "同层 = 半层带"意味着在任意平台上都能把 w 挪到 ±0.5；若不回弹，玩家会停在层与层之间、仪表与着色都很怪。加了 `settleW`（2.8 w/s）后松手即回到层中心，但这也意味着**形状节点不能要求玩家停在层间**——L18 的四面体节点改为短 hold（0.2 s），边滑边扫。
+3. 垂直堆叠必须包含每一个中间层（0 → 2 必须有 1），否则 `slideW` 会挡在 0.5。
+4. L17 的桥要通过"纯三维旋转够不着"的测试：XW −100° / 顶点 5 的锚点半径不够远（最小距离 0.175 < 0.27），改用顶点 1 / XW 110°（1.139）。
+5. `PlayerController` 依赖 `document`（角色贴图），不能在 Vitest 里构造，所以沿 W 的逻辑抽成纯函数 `slideW` / `settleW` 放进 `puzzle/`，测试直接打纯函数。
+
 ### 章节结构
 `src/puzzle/chapters.ts` 把 `LEVELS` 按 `chapter` 分组为 `CHAPTERS`（标题、概念、结尾文案）。章末关完成 → 章节结算 → "下一章"或回菜单；主菜单可直接选章。`?level=N` 仍可直达任意关。
 
@@ -349,10 +371,11 @@ interface LevelDef {
           projection?: { initial: ProjectionMode; switchable: boolean };   // 第四章
           polytope?: 'tesseract' | 'cell16' | 'cell24' };                  // 第五章
   bridges: BridgeDef[];
-  nodes: NodeDef[];          // trigger: rotation | slice | reach | shape
+  nodes: NodeDef[];          // trigger: rotation | slice | reach(w?) | shape
   gates?: GateDef[];         // 第三章：节点满足即成路
-  exit: { position: Vec3; radius: number; requires: string[] };
+  exit: { position: Vec3; radius: number; requires: string[]; w?: number };
   slice?: { enabled: boolean; initial: number; range: [number, number] };
+  playerW?: { enabled: boolean; initial: number; range: [number, number]; sliceFollows?: boolean };  // 第六章；AABB 也带 w?
 }
 ```
 
@@ -503,5 +526,6 @@ npm run preview    # 本地预览 docs/ 产物
 - 第三章 Cross-Sections：截面签名与命名、形状节点、闸门、HUD 截面行，第 7–9 关。134 个单元测试通过，第 7–9 关及"第二章结算 → 下一章 → 第 7 关"、第三章结算在无头浏览器中验证。
 - 第四章 Shadows：透视/正交混合投影与 P 键切换、投影桥（对径顶点对）、投影提示、HUD 投影行，第 10–12 关。167 个单元测试通过，第 10–12 关（含"错误投影下无解"的实测）与第四章结算在无头浏览器中验证。
 - 第五章 Other Polytopes：泛型多胞体（面/胞）、16-cell 与 24-cell 生成器、截面签名按胞分组、核心按关切换、任意顶点桥、`w0Range` 形状节点，第 13–15 关。**196 个单元测试通过**（含欧拉示性数、每面恰属两胞、截面行为），第 13–15 关与第五章结算在无头浏览器中验证。
+- 第六章 Crossing Over：玩家自身 w 坐标（I / K）、按 w 层分组的可行走面、不跳层的 `slideW` 与回弹 `settleW`、同层节点/出口、切片跟随玩家、分层平台视觉与"你的 w"仪表，第 16–18 关。**216 个单元测试通过**，第 16–18 关与第六章结算在无头浏览器中验证。
 
 Node ≥ 20。`npm run dev` 默认绑定 `0.0.0.0:5173`。

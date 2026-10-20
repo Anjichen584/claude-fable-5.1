@@ -49,6 +49,30 @@ export function GameHUD({ snap }: Props) {
             <span style={{ color: GOLD }}>{snap.linked[0]} ≡ {snap.linked[1]}</span>
           </div>
         )}
+        {snap.playerW && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: GOLD }}>你的 w (I / K)</span>
+              <span style={{ color: snap.playerW.blocked ? '#ff7a7a' : '#fff', fontVariantNumeric: 'tabular-nums' }}>
+                {snap.playerW.w >= 0 ? '+' : ''}{snap.playerW.w.toFixed(2)}{snap.playerW.blocked ? ' · 脚下无地面' : ''}
+              </span>
+            </div>
+            <div style={{ position: 'relative', height: 6, marginTop: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 3 }}>
+              {(() => {
+                const [lo, hi] = snap.playerW.range;
+                const pct = ((snap.playerW.w - lo) / Math.max(1e-6, hi - lo)) * 100;
+                const zero = ((0 - lo) / Math.max(1e-6, hi - lo)) * 100;
+                return (
+                  <>
+                    <div style={{ position: 'absolute', left: `${zero}%`, top: -2, width: 1, height: 10, background: '#4a5a80' }} />
+                    <div style={{ position: 'absolute', left: `calc(${pct}% - 4px)`, top: -2, width: 8, height: 10, borderRadius: 2, background: snap.playerW.w > 0.01 ? PURPLE : snap.playerW.w < -0.01 ? GOLD : CYAN }} />
+                  </>
+                );
+              })()}
+            </div>
+            {snap.playerW.sliceFollows && <div style={{ marginTop: 3, fontSize: 10, color: '#6a7aa0' }}>切片 w₀ 跟随你的 w</div>}
+          </div>
+        )}
         {snap.polytope.kind !== 'tesseract' && (
           <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ color: GOLD }}>核心</span>
@@ -146,7 +170,8 @@ export function GameHUD({ snap }: Props) {
         {snap.slice && <Key k="6 + [ ]" v="ZW" gold />}
         <Key k="1–6 + [ ]" v="自由平面" />
         {snap.linked && <Key k="⇧ + [ ]" v="等角双旋" gold />}
-        {snap.slice && <Key k=", / ." v="切片" gold />}
+        {snap.slice && !snap.playerW?.sliceFollows && <Key k=", / ." v="切片" gold />}
+        {snap.playerW && <Key k="I / K" v="沿 W 移动" gold />}
         {snap.projection.switchable && <Key k="P" v="透视 / 正交" gold />}
         <Key k="R" v="重置" />
         <Key k="Esc" v="暂停" />
