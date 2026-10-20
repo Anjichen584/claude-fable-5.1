@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Vec3 } from '../math';
 import type { BridgeStatus, NodeStatus, PuzzleSession } from '../puzzle/PuzzleSession';
-import { aabbCenter, aabbSize } from '../puzzle/PuzzleRules';
+import { aabbCenter, aabbSize, type BridgeEvaluation } from '../puzzle/PuzzleRules';
 import type { AABB, LevelDef } from '../puzzle/types';
 import { glowTex } from './PlayerController';
 
@@ -10,11 +10,8 @@ const C_PURPLE = new THREE.Color('#a86bff');
 const C_GOLD = new THREE.Color('#ffd166');
 const C_DIM = new THREE.Color('#2a3a66');
 
-interface BridgeVisual {
-  id: string;
-  deck: THREE.Mesh;
-  deckMat: THREE.MeshBasicMaterial;
-  ghost: THREE.LineSegments;
+/** 一个"共振插座"：锚点环 + 锚点光晕 + 目标顶点光点 + 连线。双旋桥有两个。 */
+interface SocketVisual {
   anchorRing: THREE.Mesh;
   anchorMat: THREE.MeshBasicMaterial;
   anchorGlow: THREE.Sprite;
@@ -22,6 +19,14 @@ interface BridgeVisual {
   beam: THREE.Line;
   beamMat: THREE.LineBasicMaterial;
   beamPositions: Float32Array;
+}
+
+interface BridgeVisual {
+  id: string;
+  deck: THREE.Mesh;
+  deckMat: THREE.MeshBasicMaterial;
+  ghost: THREE.LineSegments;
+  sockets: SocketVisual[];
   lockT: number; // 锁定动画进度 0..1
 }
 
@@ -47,7 +52,7 @@ export class LevelView {
 
   constructor(level: LevelDef) {
     for (const p of level.platforms) this.addPlatform(p);
-    for (const b of level.bridges) this.addBridge(b.id, b.walkable);
+    for (const b of level.bridges) this.addBridge(b.id, b.walkable, b.vertex2 !== undefined ? 2 : 1);
     for (const n of level.nodes) this.addNode(n.id, n.position);
     this.addPortal(level.exit.position);
   }
@@ -78,7 +83,7 @@ export class LevelView {
   }
 
   // ---------------------------------------------------------------- 桥
-  private addBridge(id: string, box: AABB): void {
+  private addBridge(id: string, box: AABB, socketCount: number): void {
     const size = aabbSize(box);
     const center = aabbCenter(box);
 
@@ -95,8 +100,17 @@ export class LevelView {
     ghost.position.set(center[0], box.max[1], center[2]);
     this.group.add(ghost);
 
+    const sockets: SocketVisual[] = [];
+    for (let i = 0; i < socketCount; i++) sockets.push(this.addSocket(i));
+
+    this.bridges.set(id, { id, deck, deckMat, ghost, sockets, lockT: 0 });
+    this.disposables.push(deckGeom, deckMat, ghostGeom, ghost.material as THREE.Material);
+  }
+
+  /** 第二个插座用稍小的环与偏紫的色调区分 */
+  private addSocket(slot: number): SocketVisual {
     const anchorMat = new THREE.MeshBasicMaterial({ color: C_PURPLE, transparent: true, opacity: 0.9, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false });
-    const anchorRing = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.025, 10, 40), anchorMat);
+    const anchorRing = new THREE.Mesh(new THREE.TorusGeometry(slot === 0 ? 0.22 : 0.17, 0.025, 10, 40), anchorMat);
     anchorRing.visible = false;
     this.group.add(anchorRing);
 
@@ -118,8 +132,8 @@ export class LevelView {
     beam.frustumCulled = false;
     this.group.add(beam);
 
-    this.bridges.set(id, { id, deck, deckMat, ghost, anchorRing, anchorMat, anchorGlow, targetGlow, beam, beamMat, beamPositions, lockT: 0 });
-    this.disposables.push(deckGeom, deckMat, ghostGeom, ghost.material as THREE.Material, anchorRing.geometry, anchorMat, anchorGlow.material, targetGlow.material, beamGeom, beamMat);
+    this.disposables.push(anchorRing.geometry, anchorMat, anchorGlow.material, targetGlow.material, beamGeom, beamMat);
+    return { anchorRing, anchorMat, anchorGlow, targetGlow, beam, beamMat, beamPositions };
   }
 
   // ---------------------------------------------------------------- 节点
@@ -187,46 +201,60 @@ export class LevelView {
       v.deck.position.z = startZ + (farZ - startZ) * 0.5 * e;
       if (Math.abs(v.deck.scale.z * len - len) < 1e-3) v.deck.position.z = (box.min[2] + box.max[2]) / 2;
       v.ghost.visible = false;
-      v.anchorMat.color.copy(C_GOLD);
-      (v.anchorGlow.material as THREE.SpriteMaterial).color.copy(C_GOLD);
-      v.anchorRing.visible = true;
-      v.anchorGlow.visible = true;
-      v.anchorRing.scale.setScalar(1 + 0.08 * Math.sin(time * 5) + (1 - e) * 2.5);
-      v.anchorGlow.scale.setScalar(1.2 + (1 - e) * 4);
-      (v.anchorGlow.material as THREE.SpriteMaterial).opacity = 0.6 + (1 - e) * 0.4;
-      v.targetGlow.visible = false;
-      v.beamMat.opacity = Math.max(0, 0.9 - v.lockT);
+      for (const sk of v.sockets) {
+        sk.anchorMat.color.copy(C_GOLD);
+        (sk.anchorGlow.material as THREE.SpriteMaterial).color.copy(C_GOLD);
+        sk.anchorRing.visible = true;
+        sk.anchorGlow.visible = true;
+        sk.anchorRing.scale.setScalar(1 + 0.08 * Math.sin(time * 5) + (1 - e) * 2.5);
+        sk.anchorGlow.scale.setScalar(1.2 + (1 - e) * 4);
+        (sk.anchorGlow.material as THREE.SpriteMaterial).opacity = 0.6 + (1 - e) * 0.4;
+        sk.targetGlow.visible = false;
+        sk.beamMat.opacity = Math.max(0, 0.9 - v.lockT);
+      }
       return;
     }
 
     v.deck.visible = false;
     v.ghost.visible = b.visible;
-    v.anchorRing.visible = b.visible;
-    v.anchorGlow.visible = b.visible;
-    v.targetGlow.visible = b.visible;
+    for (const sk of v.sockets) {
+      sk.anchorRing.visible = b.visible;
+      sk.anchorGlow.visible = b.visible;
+      sk.targetGlow.visible = b.visible;
+    }
     if (!b.visible || !b.evaluation) {
-      v.beamMat.opacity = 0;
+      for (const sk of v.sockets) sk.beamMat.opacity = 0;
       return;
     }
     const ev = b.evaluation;
-    v.anchorRing.position.set(ev.anchor[0], ev.anchor[1], ev.anchor[2]);
-    v.anchorGlow.position.copy(v.anchorRing.position);
-    v.anchorRing.rotation.y = time * 0.8;
-    v.anchorRing.rotation.x = Math.sin(time * 0.6) * 0.6;
-    v.targetGlow.position.set(ev.endpoint[0], ev.endpoint[1], ev.endpoint[2]);
+    // 双旋桥：两个插座各自对应一个目标；单桥只有一个
+    const evals = ev.second ? [ev.primary ?? ev, ev.second] : [ev];
+    v.sockets.forEach((sk, i) => {
+      const e = evals[i];
+      if (!e) return;
+      this.updateSocket(sk, e, b.progress, time, i);
+    });
+  }
 
-    const close = THREE.MathUtils.clamp(1 - ev.distance / 2.5, 0, 1);
-    const col = ev.satisfied ? C_CYAN : C_PURPLE;
-    v.anchorMat.color.copy(col);
-    (v.anchorGlow.material as THREE.SpriteMaterial).color.copy(col);
-    v.anchorGlow.scale.setScalar(0.9 + close * 0.6 + b.progress * 0.8);
-    v.anchorRing.scale.setScalar(1 + b.progress * 0.5);
-    v.targetGlow.scale.setScalar(0.45 + 0.1 * Math.sin(time * 6));
+  private updateSocket(sk: SocketVisual, e: BridgeEvaluation, progress: number, time: number, slot: number): void {
+    sk.anchorRing.position.set(e.anchor[0], e.anchor[1], e.anchor[2]);
+    sk.anchorGlow.position.copy(sk.anchorRing.position);
+    sk.anchorRing.rotation.y = time * 0.8 + slot * 1.3;
+    sk.anchorRing.rotation.x = Math.sin(time * 0.6 + slot) * 0.6;
+    sk.targetGlow.position.set(e.endpoint[0], e.endpoint[1], e.endpoint[2]);
 
-    v.beamPositions.set([ev.endpoint[0], ev.endpoint[1], ev.endpoint[2], ev.anchor[0], ev.anchor[1], ev.anchor[2]]);
-    (v.beam.geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
-    v.beamMat.opacity = close * close * 0.8;
-    v.beamMat.color.copy(ev.satisfied ? C_CYAN : C_GOLD);
+    const close = THREE.MathUtils.clamp(1 - e.distance / 2.5, 0, 1);
+    const col = e.satisfied ? C_CYAN : C_PURPLE;
+    sk.anchorMat.color.copy(col);
+    (sk.anchorGlow.material as THREE.SpriteMaterial).color.copy(col);
+    sk.anchorGlow.scale.setScalar(0.9 + close * 0.6 + progress * 0.8);
+    sk.anchorRing.scale.setScalar(1 + progress * 0.5);
+    sk.targetGlow.scale.setScalar(0.45 + 0.1 * Math.sin(time * 6 + slot));
+
+    sk.beamPositions.set([e.endpoint[0], e.endpoint[1], e.endpoint[2], e.anchor[0], e.anchor[1], e.anchor[2]]);
+    (sk.beam.geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
+    sk.beamMat.opacity = close * close * 0.8;
+    sk.beamMat.color.copy(e.satisfied ? C_CYAN : C_GOLD);
   }
 
   private updateNode(n: NodeStatus, time: number, sliceW0: number | null): void {

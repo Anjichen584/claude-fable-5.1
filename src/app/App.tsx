@@ -53,12 +53,22 @@ export default function App() {
       {!error && snap && g && (
         <>
           {snap.phase !== 'menu' && snap.phase !== 'won' && <GameHUD snap={snap} />}
-          {snap.phase === 'menu' && <MainMenu onStart={() => { g.unlockAudio(); g.startLevel(1); }} muted={snap.muted} onToggleMute={() => { g.unlockAudio(); g.toggleMute(); }} />}
+          {snap.phase === 'menu' && (
+            <MainMenu
+              onStart={() => { g.unlockAudio(); g.startLevel(1); }}
+              onStartChapter={(i) => { g.unlockAudio(); g.startChapter(i); }}
+              chapters={snap.chapters}
+              muted={snap.muted}
+              onToggleMute={() => { g.unlockAudio(); g.toggleMute(); }}
+            />
+          )}
           {snap.phase === 'paused' && <PauseMenu onResume={() => g.resume()} onRestart={() => g.resetLevel()} onMenu={() => g.toMenu()} muted={snap.muted} onToggleMute={() => g.toggleMute()} />}
           {snap.phase === 'complete' && (
-            <LevelComplete title={snap.title} index={snap.levelIndex} last={snap.levelIndex >= snap.levelCount} onNext={() => g.nextLevel()} onReplay={() => g.resetLevel()} />
+            <LevelComplete title={snap.title} index={snap.levelIndex} last={!!snap.chapter && snap.chapter.levelInChapter >= snap.chapter.levelCount} onNext={() => g.nextLevel()} onReplay={() => g.resetLevel()} />
           )}
-          {snap.phase === 'won' && <Victory onMenu={() => g.toMenu()} onReplay={() => g.startLevel(1)} />}
+          {snap.phase === 'won' && (
+            <Victory chapter={snap.chapter} onMenu={() => g.toMenu()} onReplay={() => g.startChapter(snap.chapter?.index ?? 1)} onNextChapter={() => g.nextChapter()} />
+          )}
           {snap.debug && debugState && (
             <DebugHUD snapshot={debugState} fps={snap.fps} handle={{ state: g.viewState, touch: () => setDebugState(structuredClone(g.viewState)) }} />
           )}

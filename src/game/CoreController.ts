@@ -10,6 +10,8 @@ export const KEYMAP = {
   slice: ['Comma', 'Period'],
   toggleSlice: 'KeyX',
   selectPlane: ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'],
+  /** 按住任一 Shift + [ ] → 等角双旋（关卡定义了 linked 平面时） */
+  linkModifier: ['ShiftLeft', 'ShiftRight'],
 } as const;
 
 export const ROTATE_SPEED = 1.2; // rad/s
@@ -25,6 +27,10 @@ export class CoreController {
   allowSliceToggle = true;
   /** 旋转速度倍率（0..1）。接近共振时由 GameController 调低，形成"磁性吸附"手感 */
   speedScale = 1;
+  /** 等角双旋的两个平面（由关卡定义）；null 表示本关没有 */
+  linkedPlanes: readonly [Plane, Plane] | null = null;
+  /** 上一帧是否处于双旋输入中（供 HUD 高亮） */
+  linking = false;
 
   constructor(state: ViewState, input: Input) {
     this.state = state;
@@ -46,7 +52,16 @@ export class CoreController {
     const speed = ROTATE_SPEED * this.speedScale;
     this.rotate('XW', axis(KEYMAP.XW) * speed * dt);
     this.rotate('YW', axis(KEYMAP.YW) * speed * dt);
-    this.rotate(s.activePlane, axis(KEYMAP.active) * speed * dt);
+    const shift = KEYMAP.linkModifier.some((c) => inp.isDown(c));
+    const a = axis(KEYMAP.active);
+    this.linking = shift && this.linkedPlanes !== null && a !== 0;
+    if (shift && this.linkedPlanes) {
+      // 等角双旋：两个正交平面同角速度
+      this.rotate(this.linkedPlanes[0], a * speed * dt);
+      this.rotate(this.linkedPlanes[1], a * speed * dt);
+    } else {
+      this.rotate(s.activePlane, a * speed * dt);
+    }
 
     const sd = axis(KEYMAP.slice);
     if (sd !== 0 && s.slice.enabled) {

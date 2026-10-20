@@ -18,7 +18,9 @@ export function GameHUD({ snap }: Props) {
     <>
       {/* 左上：标题 + 姿态 */}
       <div style={{ ...panel, top: 16, left: 16, width: 250 }}>
-        <div style={{ fontSize: 10, letterSpacing: '0.3em', color: '#6fa8ff' }}>LEVEL {String(snap.levelIndex).padStart(2, '0')} / {String(snap.levelCount).padStart(2, '0')}</div>
+        <div style={{ fontSize: 10, letterSpacing: '0.3em', color: '#6fa8ff' }}>
+          {snap.chapter ? `CH ${String(snap.chapter.index).padStart(2, '0')} · ` : ''}LEVEL {String(snap.levelIndex).padStart(2, '0')} / {String(snap.levelCount).padStart(2, '0')}
+        </div>
         <div style={{ fontSize: 18, fontWeight: 700, marginTop: 2 }}>
           {snap.title} <span style={{ color: '#9fb3d9', fontWeight: 400, fontSize: 13 }}>{snap.subtitle}</span>
         </div>
@@ -27,7 +29,8 @@ export function GameHUD({ snap }: Props) {
           {PLANES.map((p) => {
             const w = involvesW(p);
             const locked = snap.lockedPlanes.includes(p);
-            const active = snap.activePlane === p;
+            const linkedNow = snap.linking && snap.linked !== null && snap.linked.includes(p);
+            const active = snap.activePlane === p || linkedNow;
             return (
               <div key={p} style={{
                 display: 'flex', justifyContent: 'space-between', padding: '3px 6px', borderRadius: 4, whiteSpace: 'nowrap', fontSize: 11,
@@ -40,6 +43,12 @@ export function GameHUD({ snap }: Props) {
             );
           })}
         </div>
+        {snap.linked && (
+          <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', color: snap.linking ? CYAN : '#9fb3d9' }}>
+            <span>⇧ + [ ] 等角双旋</span>
+            <span style={{ color: GOLD }}>{snap.linked[0]} ≡ {snap.linked[1]}</span>
+          </div>
+        )}
         {snap.slice && (
           <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ color: GOLD }}>切片 w₀</span>
@@ -95,6 +104,7 @@ export function GameHUD({ snap }: Props) {
         <Key k="Q / E" v="XW" gold />
         <Key k="Z / C" v="YW" gold />
         <Key k="1–6 + [ ]" v="自由平面" />
+        {snap.linked && <Key k="⇧ + [ ]" v="等角双旋" gold />}
         {snap.slice && <Key k=", / ." v="切片" gold />}
         <Key k="R" v="重置" />
         <Key k="Esc" v="暂停" />
@@ -110,8 +120,12 @@ function BridgeRow({ b }: { b: GameSnapshot['bridges'][number] }) {
   return (
     <div style={{ padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <span style={{ color }}>{b.id}</span>
-        <span style={{ color: involvesW(b.plane) ? GOLD : '#9fb3d9' }}>{b.plane}</span>
+        <span style={{ color }}>{b.id}{b.second ? <span style={{ color: '#6a7aa0' }}> · 双旋</span> : null}</span>
+        <span>
+          <span style={{ color: involvesW(b.plane) ? GOLD : '#9fb3d9' }}>{b.plane}</span>
+          {b.plane2 && <span style={{ color: '#6a7aa0' }}> + </span>}
+          {b.plane2 && <span style={{ color: involvesW(b.plane2) ? GOLD : '#9fb3d9' }}>{b.plane2}</span>}
+        </span>
       </div>
       {b.locked ? (
         <div style={{ color: GOLD, fontSize: 11, marginTop: 2 }}>已锁定 · 可通行</div>
@@ -119,20 +133,31 @@ function BridgeRow({ b }: { b: GameSnapshot['bridges'][number] }) {
         <div style={{ color: '#4a5a80', fontSize: 11, marginTop: 2 }}>锚点未出现</div>
       ) : (
         <>
-          <Meter label="距离" ok={b.distanceOk} value={Number.isFinite(b.distance) ? b.distance.toFixed(2) : '—'} fill={Math.max(0, 1 - b.distance / 2.5)} />
-          <Meter label="方向" ok={b.angleOk} value={`${b.angleErrorDeg.toFixed(0)}°`} fill={Math.max(0, 1 - b.angleErrorDeg / 90)} />
-          <Meter label="共振" ok={b.progress >= 1} value={`${Math.round(b.progress * 100)}%`} fill={b.progress} accent={CYAN} />
+          {b.second ? (
+            <>
+              <Meter label={`距离${b.plane}`} ok={b.distanceOk} value={Number.isFinite(b.distance) ? b.distance.toFixed(2) : '—'} fill={Math.max(0, 1 - b.distance / 2.5)} wide />
+              <Meter label={`距离${b.plane2 ?? ''}`} ok={b.second.distanceOk} value={Number.isFinite(b.second.distance) ? b.second.distance.toFixed(2) : '—'} fill={Math.max(0, 1 - b.second.distance / 2.5)} wide />
+              <Meter label="方向" ok={b.angleOk && b.second.angleOk} value={`${Math.max(b.angleErrorDeg, b.second.angleErrorDeg).toFixed(0)}°`} fill={Math.max(0, 1 - Math.max(b.angleErrorDeg, b.second.angleErrorDeg) / 90)} wide />
+              <Meter label="共振" ok={b.progress >= 1} value={`${Math.round(b.progress * 100)}%`} fill={b.progress} accent={CYAN} wide />
+            </>
+          ) : (
+            <>
+              <Meter label="距离" ok={b.distanceOk} value={Number.isFinite(b.distance) ? b.distance.toFixed(2) : '—'} fill={Math.max(0, 1 - b.distance / 2.5)} />
+              <Meter label="方向" ok={b.angleOk} value={`${b.angleErrorDeg.toFixed(0)}°`} fill={Math.max(0, 1 - b.angleErrorDeg / 90)} />
+              <Meter label="共振" ok={b.progress >= 1} value={`${Math.round(b.progress * 100)}%`} fill={b.progress} accent={CYAN} />
+            </>
+          )}
         </>
       )}
     </div>
   );
 }
 
-function Meter({ label, ok, value, fill, accent }: { label: string; ok: boolean; value: string; fill: number; accent?: string }) {
+function Meter({ label, ok, value, fill, accent, wide }: { label: string; ok: boolean; value: string; fill: number; accent?: string; wide?: boolean }) {
   const col = ok ? (accent ?? CYAN) : PURPLE;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, fontSize: 11 }}>
-      <span style={{ width: 28, color: '#9fb3d9' }}>{label}</span>
+      <span style={{ width: wide ? 50 : 28, color: '#9fb3d9', whiteSpace: 'nowrap' }}>{label}</span>
       <div style={{ flex: 1, height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
         <div style={{ width: `${Math.min(100, Math.max(0, fill * 100))}%`, height: '100%', background: col, transition: 'width 80ms linear' }} />
       </div>

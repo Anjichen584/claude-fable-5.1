@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { createTesseract, W_PLANES, type Plane, type Polytope4, type Rotation4D } from '../math';
 import { LEVELS } from '../puzzle/levels';
+import { CHAPTERS, chapterOf, isLastInChapter, nextChapter } from '../puzzle/chapters';
+import type { ChapterDef } from '../puzzle/types';
 import { PuzzleSession, type BridgeStatus, type PuzzleEvent } from '../puzzle/PuzzleSession';
 import type { LevelDef } from '../puzzle/types';
 import { AudioEngine } from './Audio';
@@ -14,22 +16,50 @@ import { createDefaultViewState, type ViewState } from './ViewState';
 
 export type GamePhase = 'menu' | 'playing' | 'paused' | 'complete' | 'won';
 
-export interface BridgeSnapshot {
-  id: string;
-  plane: Plane;
-  visible: boolean;
-  locked: boolean;
+export interface BridgeTargetSnapshot {
   distance: number;
   angleErrorDeg: number;
   distanceOk: boolean;
   angleOk: boolean;
+}
+
+export interface BridgeSnapshot extends BridgeTargetSnapshot {
+  id: string;
+  plane: Plane;
+  /** 双旋桥的第二平面与第二目标 */
+  plane2: Plane | null;
+  second: BridgeTargetSnapshot | null;
+  visible: boolean;
+  locked: boolean;
   progress: number;
+}
+
+export interface ChapterSnapshot {
+  index: number;
+  title: string;
+  subtitle: string;
+  concept: string;
+  outro: string;
+  levelCount: number;
+  /** 当前关在章内的序号（1 起） */
+  levelInChapter: number;
+  hasNext: boolean;
+  /** 已通关（localStorage） */
+  completed: boolean;
 }
 
 export interface GameSnapshot {
   phase: GamePhase;
   levelIndex: number;
   levelCount: number;
+  /** 当前章（playing/complete/won）；菜单时为 null */
+  chapter: ChapterSnapshot | null;
+  /** 章节列表（菜单选章用） */
+  chapters: ChapterSnapshot[];
+  /** 等角双旋平面；本关无则 null */
+  linked: [Plane, Plane] | null;
+  /** 本帧正在双旋输入 */
+  linking: boolean;
   title: string;
   subtitle: string;
   rotation: Rotation4D;
@@ -58,6 +88,7 @@ export class GameController {
   readonly viewState: ViewState = createDefaultViewState();
   readonly audio = new AudioEngine();
   phase: GamePhase = 'menu';
+  private wonChapter: ChapterDef | null = null;
   debug = false;
 
   private readonly scene: GameScene;
@@ -105,6 +136,13 @@ export class GameController {
     return LEVELS.length;
   }
 
+  /** 从某章第一关开始 */
+  startChapter(chapterIndex: number): void {
+    const ch = CHAPTERS.find((c) => c.index === chapterIndex);
+    const first = ch?.levels[0];
+    if (first) this.startLevel(first.index);
+  }
+
   startLevel(index: number): void {
     const level = LEVELS.find((l) => l.index === index);
     if (!level) {
@@ -112,6 +150,7 @@ export class GameController {
       this.emitSnapshot();
       return;
     }
+    this.wonChapter = null;
     this.unloadLevel();
     this.level = level;
     this.session = new PuzzleSession(level, this.poly);
@@ -124,9 +163,13 @@ export class GameController {
     this.coreController.allowedPlanes = new Set(level.core.allowedPlanes);
     this.coreController.sliceRange = level.slice?.range ?? [-2.2, 2.2];
     this.coreController.allowSliceToggle = !!level.slice;
+    this.coreController.linkedPlanes = level.core.linked ?? null;
 
     this.tesseract.group.position.set(level.core.position[0], level.core.position[1], level.core.position[2]);
     this.tesseract.group.scale.setScalar(level.core.scale);
+    // 视角倾斜：与 puzzle 里的 applyTilt 一致（先绕 X 俯仰，再绕 Y 偏航 → Euler 'YXZ'）
+    const tilt = level.core.tilt;
+    this.tesseract.group.rotation.set(tilt?.pitch ?? 0, tilt?.yaw ?? 0, 0, 'YXZ');
 
     this.player.setPosition(level.playerStart);
     this.player.facing = Math.PI;
@@ -147,9 +190,26 @@ export class GameController {
     if (this.level) this.startLevel(this.level.index);
   }
 
+  /** 下一关；若当前是章末关则进入章节结算（won） */
   nextLevel(): void {
     if (!this.level) return;
+    if (isLastInChapter(this.level)) {
+      const ch = chapterOf(this.level);
+      markChapterCompleted(ch.id);
+      this.wonChapter = ch;
+      this.phase = 'won';
+      this.emitSnapshot();
+      return;
+    }
     this.startLevel(this.level.index + 1);
+  }
+
+  /** 章节结算后进入下一章（没有则回菜单） */
+  nextChapter(): void {
+    const ch = this.wonChapter ?? (this.level ? chapterOf(this.level) : null);
+    const nx = ch ? nextChapter(ch) : undefined;
+    if (nx) this.startChapter(nx.index);
+    else this.toMenu();
   }
 
   pause(): void {
@@ -260,6 +320,7 @@ export class GameController {
       this.viewState.rotation = { ...this.viewState.rotation, XW: this.viewState.rotation.XW + dt * 0.25, YZ: this.viewState.rotation.YZ + dt * 0.1 };
       this.tesseract.group.position.set(0, 0, 0);
       this.tesseract.group.scale.setScalar(1);
+      this.tesseract.group.rotation.set(0, 0, 0, 'YXZ');
       this.scene.controls.target.lerp(new THREE.Vector3(0, 0, 0), 0.05);
     } else if (this.levelView && this.session) {
       // 暂停 / 完成：场景静止但仍渲染反馈
@@ -339,11 +400,15 @@ export class GameController {
       phase: this.phase,
       levelIndex: l?.index ?? 0,
       levelCount: LEVELS.length,
+      chapter: this.chapterSnapshot(this.wonChapter ?? (l ? chapterOf(l) : null), l?.index ?? 0),
+      chapters: CHAPTERS.map((c) => this.chapterSnapshot(c, 0) as ChapterSnapshot),
+      linked: l?.core.linked ? [l.core.linked[0], l.core.linked[1]] : null,
+      linking: this.coreController.linking,
       title: l?.title ?? 'NEXUS: 4D',
       subtitle: l?.subtitle ?? '',
       rotation: { ...this.viewState.rotation },
       activePlane: this.viewState.activePlane,
-      lockedPlanes: s ? s.bridges.filter((b) => b.locked).map((b) => b.def.plane) : [],
+      lockedPlanes: s ? s.bridges.filter((b) => b.locked).flatMap((b) => (b.def.plane2 ? [b.def.plane, b.def.plane2] : [b.def.plane])) : [],
       bridges: s ? s.bridges.map(toBridgeSnapshot) : [],
       nodes: s ? s.nodes.map((n) => ({ id: n.def.id, visible: n.visible, active: n.active })) : [],
       exitReady: s?.exitReady ?? false,
@@ -352,6 +417,22 @@ export class GameController {
       fps: this.fps,
       debug: this.debug,
       muted: this.audio.muted,
+    };
+  }
+
+  private chapterSnapshot(ch: ChapterDef | null, levelIndex: number): ChapterSnapshot | null {
+    if (!ch) return null;
+    const pos = ch.levels.findIndex((lv) => lv.index === levelIndex);
+    return {
+      index: ch.index,
+      title: ch.title,
+      subtitle: ch.subtitle,
+      concept: ch.concept,
+      outro: ch.outro,
+      levelCount: ch.levels.length,
+      levelInChapter: pos >= 0 ? pos + 1 : 0,
+      hasNext: nextChapter(ch) !== undefined,
+      completed: isChapterCompleted(ch.id),
     };
   }
 
@@ -366,16 +447,49 @@ export class GameController {
   }
 }
 
+function toTargetSnapshot(e: { distance: number; angleError: number; distanceOk: boolean; angleOk: boolean } | null | undefined): BridgeTargetSnapshot {
+  return {
+    distance: e?.distance ?? Infinity,
+    angleErrorDeg: ((e?.angleError ?? Math.PI) * 180) / Math.PI,
+    distanceOk: e?.distanceOk ?? false,
+    angleOk: e?.angleOk ?? false,
+  };
+}
+
 function toBridgeSnapshot(b: BridgeStatus): BridgeSnapshot {
+  const ev = b.evaluation;
+  // 双旋桥：主行显示第一个目标自己的数据，second 显示第二个；锁定/进度仍以合并结果为准
+  const first = ev?.primary ?? ev;
   return {
     id: b.def.id,
     plane: b.def.plane,
+    plane2: b.def.plane2 ?? null,
+    second: b.def.vertex2 !== undefined ? toTargetSnapshot(ev?.second) : null,
     visible: b.visible,
     locked: b.locked,
-    distance: b.evaluation?.distance ?? Infinity,
-    angleErrorDeg: ((b.evaluation?.angleError ?? Math.PI) * 180) / Math.PI,
-    distanceOk: b.evaluation?.distanceOk ?? false,
-    angleOk: b.evaluation?.angleOk ?? false,
+    ...toTargetSnapshot(first),
     progress: b.progress,
   };
+}
+
+const COMPLETED_KEY = 'nexus4d.completedChapters';
+function readCompleted(): Set<string> {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(COMPLETED_KEY) : null;
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+function isChapterCompleted(id: string): boolean {
+  return readCompleted().has(id);
+}
+function markChapterCompleted(id: string): void {
+  try {
+    const set = readCompleted();
+    set.add(id);
+    localStorage.setItem(COMPLETED_KEY, JSON.stringify([...set]));
+  } catch {
+    /* 无存储环境忽略 */
+  }
 }

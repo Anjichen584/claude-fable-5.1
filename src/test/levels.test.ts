@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createTesseract, type Plane, type Rotation4D } from '../math';
+import * as math from '../math';
+import { createTesseract, type Plane, type Rotation4D, type Vec3 } from '../math';
 import { LEVELS } from '../puzzle/levels';
 import { PuzzleSession } from '../puzzle/PuzzleSession';
-import { evaluateBridge, pointInAABBxz, resolveAnchor, toleranceOf, vertexWorldPosition } from '../puzzle/PuzzleRules';
+import { targetPoint, bridgePlanes, combineDualEvaluation, evaluateBridge, pointInAABBxz, resolveAnchor, resolveAnchor2, toleranceOf, vertexWorldPosition, type BridgeEvaluation } from '../puzzle/PuzzleRules';
+import { PLANES } from '../math';
+import { CHAPTERS, chapterOf, isLastInChapter, nextChapter } from '../puzzle/chapters';
 import type { BridgeDef, LevelDef } from '../puzzle/types';
 
 const T = createTesseract();
@@ -13,7 +16,10 @@ function baseRotationFor(level: LevelDef, bridge: BridgeDef): Rotation4D {
   const visit = (ids?: string[]) => {
     for (const id of ids ?? []) {
       const b = level.bridges.find((x) => x.id === id);
-      if (b) { visit(b.requires); r = { ...r, [b.plane]: b.solution[b.plane] }; }
+      if (b) {
+        visit(b.requires);
+        for (const p of bridgePlanes(b)) r = { ...r, [p]: b.solution[p] };
+      }
       const n = level.nodes.find((x) => x.id === id);
       if (n) visit(n.requires);
     }
@@ -38,28 +44,39 @@ describe.each(LEVELS.map((l) => [l.id, l] as const))('关卡 %s', (_id, level) =
   describe.each(level.bridges.map((b) => [b.id, b] as const))('桥 %s', (_bid, bridge) => {
     const base = baseRotationFor(level, bridge);
     const anchor = resolveAnchor(T, bridge, level.core);
+    const anchor2 = resolveAnchor2(T, bridge, level.core);
+    const planes = bridgePlanes(bridge);
+    const dual = bridge.vertex2 !== undefined;
+
+    /** 与 PuzzleSession.evaluate 一致的完整评估（含双旋第二目标） */
+    const evalAt = (r: Rotation4D): BridgeEvaluation => {
+      const first = evaluateBridge(bridge, vertexWorldPosition(T, bridge.vertex, r, level.core), anchor);
+      if (!dual) return first;
+      const second = evaluateBridge(bridge, vertexWorldPosition(T, bridge.vertex2 as number, r, level.core), anchor2 as Vec3);
+      return combineDualEvaluation(first, second);
+    };
+    const withSolution = (r: Rotation4D, delta = 0): Rotation4D => {
+      let out = { ...r };
+      for (const p of planes) out = { ...out, [p]: bridge.solution[p] + delta };
+      return out;
+    };
 
     it('只需在指定平面上旋转即可从基础姿态到达解（构造可解）', () => {
-      const r = { ...base, [bridge.plane]: bridge.solution[bridge.plane] };
-      const ep = vertexWorldPosition(T, bridge.vertex, r, level.core);
-      expect(evaluateBridge(bridge, ep, anchor).satisfied).toBe(true);
+      expect(evalAt(withSolution(base)).satisfied).toBe(true);
       // 解与基础姿态在其他平面上一致（玩家不需要碰别的平面）
       for (const p of Object.keys(base) as Plane[]) {
-        if (p !== bridge.plane) expect(bridge.solution[p]).toBeCloseTo(base[p], 10);
+        if (!planes.includes(p)) expect(bridge.solution[p]).toBeCloseTo(base[p], 10);
       }
     });
 
     it('解的角度明显不同于基础姿态（不是一开始就满足）', () => {
-      const ep0 = vertexWorldPosition(T, bridge.vertex, base, level.core);
-      expect(evaluateBridge(bridge, ep0, anchor).satisfied).toBe(false);
-      expect(Math.abs(bridge.solution[bridge.plane] - base[bridge.plane])).toBeGreaterThan(0.5);
+      expect(evalAt(base).satisfied).toBe(false);
+      for (const p of planes) expect(Math.abs(bridge.solution[p] - base[p])).toBeGreaterThan(0.5);
     });
 
     it('解在 ±0.5° 内仍满足（容差不会苛刻到无法操作）', () => {
       for (const dd of [-0.5, 0.5]) {
-        const r = { ...base, [bridge.plane]: bridge.solution[bridge.plane] + (dd * Math.PI) / 180 };
-        const ep = vertexWorldPosition(T, bridge.vertex, r, level.core);
-        expect(evaluateBridge(bridge, ep, anchor).satisfied).toBe(true);
+        expect(evalAt(withSolution(base, (dd * Math.PI) / 180)).satisfied).toBe(true);
       }
     });
 
@@ -76,15 +93,90 @@ describe.each(LEVELS.map((l) => [l.id, l] as const))('关卡 %s', (_id, level) =
               XZ: base.XZ + (b * Math.PI) / 180,
               YZ: base.YZ + (c * Math.PI) / 180,
             };
-            const ep = vertexWorldPosition(T, bridge.vertex, r, level.core);
-            const d = Math.hypot(ep[0] - anchor[0], ep[1] - anchor[1], ep[2] - anchor[2]);
+            const d = evalAt(r).distance; // 双旋桥取两个目标中的较大者
             if (d < minDist) minDist = d;
           }
         }
       }
-      // 三维旋转保持该顶点到核心中心的距离不变，而锚点半径不同，所以存在严格的下界
+      // 三维旋转保持顶点到核心中心的距离不变，而锚点半径不同，所以存在严格的下界
       expect(minDist).toBeGreaterThan(tol.distance * 1.5);
     });
+
+    if (dual) {
+      it('双旋桥：任何单一平面的旋转（1° 步进，全部六个平面）都无法同时满足两个目标', () => {
+        for (const p of PLANES) {
+          for (let k = -180; k < 180; k += 1) {
+            const r = { ...base, [p]: base[p] + (k * Math.PI) / 180 };
+            expect(evalAt(r).satisfied).toBe(false);
+          }
+        }
+      });
+
+      if (typeof bridge.vertex !== 'number') {
+        it('面心双手桥：目标 1 不随第二平面变化、目标 2 不随第一平面变化（严格解耦）', () => {
+          const [p, q] = planes;
+          for (const k of [-1.2, -0.4, 0.5, 1.4]) {
+            const r1 = { ...bridge.solution, [q]: bridge.solution[q] + k };
+            expect(evalAt(r1).primary?.distance ?? evalAt(r1).distance).toBeLessThan(1e-9);
+            const r2 = { ...bridge.solution, [p]: bridge.solution[p] + k };
+            expect(evalAt(r2).second?.distance).toBeLessThan(1e-9);
+          }
+        });
+      }
+
+      it('双旋桥：两个目标的锚点相距足够远（不会被误认为同一个）', () => {
+        const a2 = anchor2 as Vec3;
+        expect(Math.hypot(anchor[0] - a2[0], anchor[1] - a2[1], anchor[2] - a2[2])).toBeGreaterThan(0.8);
+      });
+    }
+
+    if (level.core.linked && dual && planes.every((p) => (level.core.linked as Plane[]).includes(p))) {
+      it('等角双旋：两个平面解角增量相等，且先后顺序不影响结果（正交平面可交换）', () => {
+        const [p, q] = level.core.linked as [Plane, Plane];
+        expect(bridge.solution[p] - base[p]).toBeCloseTo(bridge.solution[q] - base[q], 10);
+        const rPQ = { ...base, [p]: bridge.solution[p], [q]: bridge.solution[q] };
+        const ep = vertexWorldPosition(T, bridge.vertex, rPQ, level.core);
+        const { applyRotation, rotate4D, projectPerspective, applyTilt } = math;
+        // p、q 完全正交 → 两个旋转可交换（先 p 后 q 与先 q 后 p 结果一致）
+        const pt = targetPoint(T, bridge.vertex);
+        const v1 = rotate4D(rotate4D(pt, p, 0.7), q, 0.7);
+        const v2 = rotate4D(rotate4D(pt, q, 0.7), p, 0.7);
+        for (let i = 0; i < 4; i++) expect(v1[i]).toBeCloseTo(v2[i], 12);
+        // 且 vertexWorldPosition 与手工 applyRotation + 投影 + 倾斜一致
+        const proj = applyTilt(projectPerspective(applyRotation(pt, rPQ)), level.core.tilt);
+        for (let i = 0; i < 3; i++) expect(proj[i] * level.core.scale + level.core.position[i]).toBeCloseTo(ep[i], 10);
+      });
+    }
+  });
+});
+
+describe('章节结构', () => {
+  it('每章至少 3 关，关卡全局序号连续且按章分组', () => {
+    let expected = 1;
+    for (const ch of CHAPTERS) {
+      expect(ch.levels.length).toBeGreaterThanOrEqual(3);
+      for (const lv of ch.levels) {
+        expect(lv.index).toBe(expected++);
+        expect(lv.chapter).toBe(ch.index);
+        expect(chapterOf(lv)).toBe(ch);
+      }
+      expect(isLastInChapter(ch.levels[ch.levels.length - 1])).toBe(true);
+      expect(isLastInChapter(ch.levels[0])).toBe(false);
+    }
+    expect(expected - 1).toBe(LEVELS.length);
+    expect(nextChapter(CHAPTERS[0])).toBe(CHAPTERS[1]);
+    expect(nextChapter(CHAPTERS[CHAPTERS.length - 1])).toBeUndefined();
+  });
+
+  it('第二章每关至少有一座双旋桥；等角关的 linked 平面正交且与桥的平面一致', () => {
+    for (const lv of CHAPTERS[1].levels) {
+      expect(lv.bridges.some((b) => b.vertex2 !== undefined)).toBe(true);
+      if (lv.core.linked) {
+        const [p, q] = lv.core.linked;
+        expect(new Set([...p, ...q]).size).toBe(4); // 四个不同轴 → 完全正交
+        expect(lv.bridges.some((b) => bridgePlanes(b).every((x) => x === p || x === q))).toBe(true);
+      }
+    }
   });
 });
 
@@ -211,5 +303,48 @@ describe('第三关 The Slice 状态机', () => {
     for (let i = 0; i < 20; i++) f(l3.bridges[1].solution, 0.45);
     expect(s.bridges[1].locked).toBe(true);
     expect(s.exitReady).toBe(true);
+  });
+});
+
+describe('第二章 双旋 状态机', () => {
+  const L4 = LEVELS.find((l) => l.id === 'twohands') as LevelDef;
+  const L6 = LEVELS.find((l) => l.id === 'counterweight') as LevelDef;
+  const frame = (rotation: Rotation4D, playerPosition: Vec3, dt = 0.1) => ({ dt, rotation, playerPosition, sliceW0: null, rotatedW: true });
+
+  it('双手桥：只转对 XW（YW 未动）不会累计进度；两个都满足才锁定', () => {
+    const s = new PuzzleSession(L4, T);
+    const b = L4.bridges[0];
+    const onlyXW = { ...L4.core.initialRotation, XW: b.solution.XW };
+    for (let i = 0; i < 5; i++) s.update(frame(onlyXW, L4.playerStart));
+    expect(s.bridges[0].locked).toBe(false);
+    expect(s.bridges[0].progress).toBe(0);
+    expect(s.bridges[0].evaluation?.satisfied).toBe(false);
+    expect(s.bridges[0].evaluation?.second).toBeDefined();
+    const dOnlyXW = s.bridges[0].evaluation?.distance ?? 0;
+    s.update(frame(b.solution, L4.playerStart));
+    expect(s.bridges[0].evaluation?.distance ?? Infinity).toBeLessThan(dOnlyXW);
+    for (let i = 0; i < 4; i++) s.update(frame(b.solution, L4.playerStart));
+    expect(s.bridges[0].locked).toBe(true);
+    // 锁定后两个平面都被吸附
+    const snapped = s.snapRotationForLockedBridges({ ...b.solution, XW: 0, YW: 0 });
+    expect(snapped.XW).toBe(b.solution.XW);
+    expect(snapped.YW).toBe(b.solution.YW);
+  });
+
+  it('配重：双手桥 → 中继 → 等角桥 → 出口', () => {
+    const s = new PuzzleSession(L6, T);
+    const [a, b] = L6.bridges;
+    for (let i = 0; i < 4; i++) s.update(frame(a.solution, L6.playerStart));
+    expect(s.isActivated('bridge-a')).toBe(true);
+    expect(s.bridges[1].visible).toBe(false);
+    s.update(frame(a.solution, [0, 0, 0]));
+    expect(s.isActivated('relay')).toBe(true);
+    s.update(frame(a.solution, [0, 0, 0]));
+    expect(s.bridges[1].visible).toBe(true);
+    for (let i = 0; i < 4; i++) s.update(frame(b.solution, [0, 0, 0]));
+    expect(s.isActivated('bridge-b')).toBe(true);
+    expect(s.exitReady).toBe(true);
+    const ev = s.update(frame(b.solution, L6.exit.position));
+    expect(ev.some((e) => e.type === 'levelComplete')).toBe(true);
   });
 });

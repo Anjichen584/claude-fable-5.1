@@ -1,5 +1,5 @@
 import { distance3, involvesW, type Plane, type Polytope4, type Rotation4D, type Vec3 } from '../math';
-import { evaluateBridge, pointInAnyAABBxz, resolveAnchor, toleranceOf, vertexWorldPosition, type BridgeEvaluation } from './PuzzleRules';
+import { bridgePlanes, combineDualEvaluation, evaluateBridge, pointInAnyAABBxz, resolveAnchor, resolveAnchor2, toleranceOf, vertexWorldPosition, type BridgeEvaluation } from './PuzzleRules';
 import type { AABB, BridgeDef, LevelDef, NodeDef } from './types';
 
 export interface BridgeStatus {
@@ -86,6 +86,17 @@ export class PuzzleSession {
     return resolveAnchor(this.poly, bridge, this.level.core);
   }
 
+  /** 评估一座桥在给定姿态下的状态（含双旋桥的第二目标），不改动状态。 */
+  evaluate(bridge: BridgeDef, rotation: Rotation4D): BridgeEvaluation {
+    const anchor = this.anchorOf(bridge);
+    const endpoint = vertexWorldPosition(this.poly, bridge.vertex, rotation, this.level.core);
+    const first = evaluateBridge(bridge, endpoint, anchor);
+    if (bridge.vertex2 === undefined) return first;
+    const anchor2 = resolveAnchor2(this.poly, bridge, this.level.core) as Vec3;
+    const endpoint2 = vertexWorldPosition(this.poly, bridge.vertex2, rotation, this.level.core);
+    return combineDualEvaluation(first, evaluateBridge(bridge, endpoint2, anchor2));
+  }
+
   /** 推进一帧。返回本帧产生的事件（已排序）。 */
   update(input: PuzzleFrameInput): PuzzleEvent[] {
     if (this.completed) return [];
@@ -102,9 +113,7 @@ export class PuzzleSession {
         b.progress = 0;
         continue;
       }
-      const anchor = this.anchorOf(b.def);
-      const endpoint = vertexWorldPosition(this.poly, b.def.vertex, input.rotation, this.level.core);
-      b.evaluation = evaluateBridge(b.def, endpoint, anchor);
+      b.evaluation = this.evaluate(b.def, input.rotation);
       const tol = toleranceOf(b.def);
       if (b.evaluation.satisfied) {
         b.hold += input.dt;
@@ -175,8 +184,9 @@ export class PuzzleSession {
     let out = rotation;
     for (const b of this.bridges) {
       if (!b.locked) continue;
-      const p: Plane = b.def.plane;
-      if (out[p] !== b.def.solution[p]) out = { ...out, [p]: b.def.solution[p] };
+      for (const p of bridgePlanes(b.def)) {
+        if (out[p] !== b.def.solution[p]) out = { ...out, [p]: b.def.solution[p] };
+      }
     }
     return out;
   }
