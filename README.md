@@ -368,4 +368,6 @@ npm run typecheck  # tsc --noEmit
 npm run build      # 产物输出到 dist/
 ```
 
-（项目脚手架将在 Day 1 建立，以上命令届时生效。）
+Day 1 状态：`math` 模块（tesseract 生成、六平面旋转、透视投影、面级切片）+ 36 个单元测试 + Three.js 线框渲染 + 调试 HUD 已完成。
+
+Node ≥ 20。`npm run dev` 默认绑定 `0.0.0.0:5173`。

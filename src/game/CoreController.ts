@@ -1,0 +1,58 @@
+import { PLANES, wrapAngle, type Plane } from '../math';
+import type { Input } from './Input';
+import { resetViewState, type ViewState } from './ViewState';
+
+/** 四维核心的键位：一个输入只做一件事；鼠标永远不碰这里。 */
+export const KEYMAP = {
+  XW: ['KeyQ', 'KeyE'],
+  YW: ['KeyZ', 'KeyC'],
+  active: ['BracketLeft', 'BracketRight'],
+  slice: ['Comma', 'Period'],
+  toggleSlice: 'KeyX',
+  reset: 'KeyR',
+  selectPlane: ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'],
+} as const;
+
+export const ROTATE_SPEED = 1.2; // rad/s
+export const SLICE_SPEED = 0.8; // w/s
+export const SLICE_RANGE: readonly [number, number] = [-2.2, 2.2];
+
+/** 把键盘输入转换成 ViewState 的改变。纯状态逻辑，不涉及渲染。 */
+export class CoreController {
+  private readonly state: ViewState;
+  private readonly input: Input;
+
+  constructor(state: ViewState, input: Input) {
+    this.state = state;
+    this.input = input;
+  }
+
+  update(dt: number): void {
+    const s = this.state;
+    const inp = this.input;
+
+    KEYMAP.selectPlane.forEach((code, i) => {
+      if (inp.wasPressed(code)) s.activePlane = PLANES[i];
+    });
+    if (inp.wasPressed(KEYMAP.reset)) resetViewState(s);
+    if (inp.wasPressed(KEYMAP.toggleSlice)) s.slice = { ...s.slice, enabled: !s.slice.enabled };
+
+    const axis = (codes: readonly [string, string]): number =>
+      (inp.isDown(codes[1]) ? 1 : 0) - (inp.isDown(codes[0]) ? 1 : 0);
+
+    this.rotate('XW', axis(KEYMAP.XW) * ROTATE_SPEED * dt);
+    this.rotate('YW', axis(KEYMAP.YW) * ROTATE_SPEED * dt);
+    this.rotate(s.activePlane, axis(KEYMAP.active) * ROTATE_SPEED * dt);
+
+    const sd = axis(KEYMAP.slice);
+    if (sd !== 0 && s.slice.enabled) {
+      const w0 = Math.min(SLICE_RANGE[1], Math.max(SLICE_RANGE[0], s.slice.w0 + sd * SLICE_SPEED * dt));
+      s.slice = { ...s.slice, w0 };
+    }
+  }
+
+  rotate(plane: Plane, delta: number): void {
+    if (delta === 0) return;
+    this.state.rotation = { ...this.state.rotation, [plane]: wrapAngle(this.state.rotation[plane] + delta) };
+  }
+}
