@@ -9,6 +9,8 @@ export const KEYMAP = {
   active: ['BracketLeft', 'BracketRight'],
   slice: ['Comma', 'Period'],
   toggleSlice: 'KeyX',
+  /** 透视 ⇄ 正交（第四章） */
+  toggleProjection: 'KeyP',
   selectPlane: ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'],
   /** 按住任一 Shift + [ ] → 等角双旋（关卡定义了 linked 平面时） */
   linkModifier: ['ShiftLeft', 'ShiftRight'],
@@ -25,6 +27,10 @@ export class CoreController {
   sliceRange: readonly [number, number] = [-2.2, 2.2];
   /** 是否允许用 X 切换切片（关卡未启用切片时关闭） */
   allowSliceToggle = true;
+  /** 是否允许用 P 切换投影（第四章起） */
+  allowProjectionToggle = false;
+  /** 本帧是否切换了投影（供音效/提示） */
+  projectionToggled = false;
   /** 旋转速度倍率（0..1）。接近共振时由 GameController 调低，形成"磁性吸附"手感 */
   speedScale = 1;
   /** 等角双旋的两个平面（由关卡定义）；null 表示本关没有 */
@@ -45,6 +51,15 @@ export class CoreController {
       if (inp.wasPressed(code) && this.allowedPlanes.has(PLANES[i])) s.activePlane = PLANES[i];
     });
     if (this.allowSliceToggle && inp.wasPressed(KEYMAP.toggleSlice)) s.slice = { ...s.slice, enabled: !s.slice.enabled };
+    this.projectionToggled = false;
+    if (this.allowProjectionToggle && inp.wasPressed(KEYMAP.toggleProjection)) {
+      s.projectionMode = s.projectionMode === 'perspective' ? 'orthographic' : 'perspective';
+      this.projectionToggled = true;
+    }
+    // 投影过渡动画：blend 以 0.45 s 趋向目标
+    const target = s.projectionMode === 'orthographic' ? 1 : 0;
+    const step = dt / 0.45;
+    s.projectionBlend = target > s.projectionBlend ? Math.min(target, s.projectionBlend + step) : Math.max(target, s.projectionBlend - step);
 
     const axis = (codes: readonly [string, string]): number =>
       (inp.isDown(codes[1]) ? 1 : 0) - (inp.isDown(codes[0]) ? 1 : 0);

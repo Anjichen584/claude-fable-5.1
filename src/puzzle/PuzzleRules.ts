@@ -3,7 +3,8 @@ import {
   angleBetween3,
   applyRotation,
   distance3,
-  projectPerspective,
+  projectBlend,
+  blendOf,
   sub3,
   type Polytope4,
   type ProjectionConfig,
@@ -37,8 +38,10 @@ export function vertexWorldPosition(
   rotation: Rotation4D,
   core: CoreTransform,
   proj: ProjectionConfig = DEFAULT_PROJECTION,
+  /** 投影混合：0 透视（默认），1 正交 */
+  blend = 0,
 ): Vec3 {
-  const p = applyTilt(projectPerspective(applyRotation(targetPoint(poly, ref), rotation), proj), core.tilt);
+  const p = applyTilt(projectBlend(applyRotation(targetPoint(poly, ref), rotation), blend, proj), core.tilt);
   return [
     core.position[0] + p[0] * core.scale,
     core.position[1] + p[1] * core.scale,
@@ -58,7 +61,7 @@ export function allVertexWorldPositions(
 
 /** 锚点 = 目标顶点在解姿态下的世界位置。 */
 export function resolveAnchor(poly: Polytope4, bridge: BridgeDef, core: CoreTransform): Vec3 {
-  return vertexWorldPosition(poly, bridge.vertex, bridge.solution, core);
+  return vertexWorldPosition(poly, bridge.vertex, bridge.solution, core, DEFAULT_PROJECTION, blendOf(bridge.projection ?? 'perspective'));
 }
 
 export interface BridgeEvaluation {
@@ -82,7 +85,7 @@ export interface BridgeEvaluation {
 /** 双旋桥的第二个锚点 = 第二个目标顶点在解姿态下的世界位置。 */
 export function resolveAnchor2(poly: Polytope4, bridge: BridgeDef, core: CoreTransform): Vec3 | null {
   if (bridge.vertex2 === undefined) return null;
-  return vertexWorldPosition(poly, bridge.vertex2, bridge.solution, core);
+  return vertexWorldPosition(poly, bridge.vertex2, bridge.solution, core, DEFAULT_PROJECTION, blendOf(bridge.projection ?? 'perspective'));
 }
 
 /** 合并双旋桥两个目标的评估：两者都满足才算满足。 */

@@ -49,6 +49,15 @@ export function GameHUD({ snap }: Props) {
             <span style={{ color: GOLD }}>{snap.linked[0]} ≡ {snap.linked[1]}</span>
           </div>
         )}
+        {snap.projection.switchable && (
+          <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: GOLD }}>投影 (P)</span>
+            <span style={{ color: '#fff' }}>
+              {snap.projection.mode === 'perspective' ? '透视' : '正交'}
+              {snap.projection.blend > 0.01 && snap.projection.blend < 0.99 ? ' …' : ''}
+            </span>
+          </div>
+        )}
         {snap.slice && (
           <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ color: GOLD }}>切片 w₀</span>
@@ -132,6 +141,7 @@ export function GameHUD({ snap }: Props) {
         <Key k="1–6 + [ ]" v="自由平面" />
         {snap.linked && <Key k="⇧ + [ ]" v="等角双旋" gold />}
         {snap.slice && <Key k=", / ." v="切片" gold />}
+        {snap.projection.switchable && <Key k="P" v="透视 / 正交" gold />}
         <Key k="R" v="重置" />
         <Key k="Esc" v="暂停" />
         <Key k="M" v={snap.muted ? '静音中' : '静音'} />
@@ -146,11 +156,14 @@ function BridgeRow({ b }: { b: GameSnapshot['bridges'][number] }) {
   return (
     <div style={{ padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <span style={{ color }}>{b.id}{b.second ? <span style={{ color: '#6a7aa0' }}> · 双旋</span> : null}</span>
+        <span style={{ color }}>
+          {b.id}
+          {b.projection ? <span style={{ color: '#6a7aa0' }}> · 对径 · {b.projection === 'perspective' ? '透视' : '正交'}</span> : b.second ? <span style={{ color: '#6a7aa0' }}> · 双旋</span> : null}
+        </span>
         <span>
           <span style={{ color: involvesW(b.plane) ? GOLD : '#9fb3d9' }}>{b.plane}</span>
-          {b.plane2 && <span style={{ color: '#6a7aa0' }}> + </span>}
-          {b.plane2 && <span style={{ color: involvesW(b.plane2) ? GOLD : '#9fb3d9' }}>{b.plane2}</span>}
+          {b.plane2 && b.plane2 !== b.plane && <span style={{ color: '#6a7aa0' }}> + </span>}
+          {b.plane2 && b.plane2 !== b.plane && <span style={{ color: involvesW(b.plane2) ? GOLD : '#9fb3d9' }}>{b.plane2}</span>}
         </span>
       </div>
       {b.locked ? (
@@ -161,8 +174,8 @@ function BridgeRow({ b }: { b: GameSnapshot['bridges'][number] }) {
         <>
           {b.second ? (
             <>
-              <Meter label={`距离${b.plane}`} ok={b.distanceOk} value={Number.isFinite(b.distance) ? b.distance.toFixed(2) : '—'} fill={Math.max(0, 1 - b.distance / 2.5)} wide />
-              <Meter label={`距离${b.plane2 ?? ''}`} ok={b.second.distanceOk} value={Number.isFinite(b.second.distance) ? b.second.distance.toFixed(2) : '—'} fill={Math.max(0, 1 - b.second.distance / 2.5)} wide />
+              <Meter label={b.projection ? '距离 v' : `距离${b.plane}`} ok={b.distanceOk} value={Number.isFinite(b.distance) ? b.distance.toFixed(2) : '—'} fill={Math.max(0, 1 - b.distance / 2.5)} wide />
+              <Meter label={b.projection ? '距离 −v' : `距离${b.plane2 ?? ''}`} ok={b.second.distanceOk} value={Number.isFinite(b.second.distance) ? b.second.distance.toFixed(2) : '—'} fill={Math.max(0, 1 - b.second.distance / 2.5)} wide />
               <Meter label="方向" ok={b.angleOk && b.second.angleOk} value={`${Math.max(b.angleErrorDeg, b.second.angleErrorDeg).toFixed(0)}°`} fill={Math.max(0, 1 - Math.max(b.angleErrorDeg, b.second.angleErrorDeg) / 90)} wide />
               <Meter label="共振" ok={b.progress >= 1} value={`${Math.round(b.progress * 100)}%`} fill={b.progress} accent={CYAN} wide />
             </>

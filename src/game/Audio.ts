@@ -157,6 +157,12 @@ export class AudioEngine {
     this.chime([1200], 0, 0, 0.08, 'square', 0.03);
   }
 
+  /** 投影切换：短促的双音滑移 */
+  playProjection(toOrtho: boolean): void {
+    this.sweep(toOrtho ? 900 : 450, toOrtho ? 450 : 900, 0.28, 0.08, 'sine');
+    this.chime([toOrtho ? 1046.5 : 783.99], 0.1, 0, 0.2, 'triangle', 0.05);
+  }
+
   playReset(): void {
     this.sweep(600, 150, 0.35, 0.1, 'triangle');
   }

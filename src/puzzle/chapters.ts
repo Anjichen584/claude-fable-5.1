@@ -30,6 +30,15 @@ export const CHAPTERS: readonly ChapterDef[] = [
     outro: '立方体、长方体、三棱柱、四面体。你没有换物体，只是换了它朝向 W 的那一端：一个胞、一个面、一条棱、一个顶点。用三维切片扫描四维，这就是方法。',
     levels: LEVELS.filter((l) => l.chapter === 3),
   },
+  {
+    index: 4,
+    id: 'shadows',
+    title: 'Shadows',
+    subtitle: '投影之辨',
+    concept: '投影不是物体本身：透视与正交各揭示一半信息',
+    outro: '影子、剪影、两种真相。正交投影保留对称、丢掉深度；透视保留深度、打破对称。四维物体你永远只能看到影子——但你已经学会了换一盏灯。',
+    levels: LEVELS.filter((l) => l.chapter === 4),
+  },
 ];
 
 export function chapterOf(level: LevelDef): ChapterDef {

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createTesseract, W_PLANES, type Plane, type Polytope4, type Rotation4D, sectionName } from '../math';
+import { blendOf, createTesseract, W_PLANES, type Plane, type Polytope4, type ProjectionMode, type Rotation4D, sectionName } from '../math';
 import { LEVELS } from '../puzzle/levels';
 import { CHAPTERS, chapterOf, isLastInChapter, nextChapter } from '../puzzle/chapters';
 import type { ChapterDef } from '../puzzle/types';
@@ -29,6 +29,8 @@ export interface BridgeSnapshot extends BridgeTargetSnapshot {
   /** 双旋桥的第二平面与第二目标 */
   plane2: Plane | null;
   second: BridgeTargetSnapshot | null;
+  /** 第四章：锚点所要求的投影（null = 普通桥） */
+  projection: ProjectionMode | null;
   visible: boolean;
   locked: boolean;
   progress: number;
@@ -74,6 +76,8 @@ export interface GameSnapshot {
   exitReady: boolean;
   hint: string | null;
   slice: { enabled: boolean; w0: number } | null;
+  /** 投影方式；本关不可切换时 switchable=false（前三章仍显示透视） */
+  projection: { mode: ProjectionMode; switchable: boolean; blend: number };
   fps: number;
   debug: boolean;
   muted: boolean;
@@ -168,6 +172,9 @@ export class GameController {
     this.coreController.sliceRange = level.slice?.range ?? [-2.2, 2.2];
     this.coreController.allowSliceToggle = !!level.slice;
     this.coreController.linkedPlanes = level.core.linked ?? null;
+    this.viewState.projectionMode = level.core.projection?.initial ?? 'perspective';
+    this.viewState.projectionBlend = blendOf(this.viewState.projectionMode);
+    this.coreController.allowProjectionToggle = level.core.projection?.switchable ?? false;
 
     this.tesseract.group.position.set(level.core.position[0], level.core.position[1], level.core.position[2]);
     this.tesseract.group.scale.setScalar(level.core.scale);
@@ -272,6 +279,7 @@ export class GameController {
       this.coreController.update(dt);
       let rotation = this.viewState.rotation;
       const rotatedW = W_PLANES.some((p) => rotation[p] !== before[p]);
+      if (this.coreController.projectionToggled) this.audio.playProjection(this.viewState.projectionMode === 'orthographic');
       // 已锁定的桥：对应平面吸附到精确解
       rotation = this.session.snapRotationForLockedBridges(rotation);
       this.viewState.rotation = rotation;
@@ -287,6 +295,8 @@ export class GameController {
         playerPosition: this.player.position,
         sliceW0: this.viewState.slice.enabled ? this.viewState.slice.w0 : null,
         rotatedW,
+        projectionBlend: this.viewState.projectionBlend,
+        projectionMode: this.viewState.projectionMode,
       });
       this.handleEvents(events);
 
@@ -429,6 +439,7 @@ export class GameController {
       exitReady: s?.exitReady ?? false,
       hint: this.hint,
       slice: l?.slice ? { ...this.viewState.slice } : null,
+      projection: { mode: this.viewState.projectionMode, switchable: l?.core.projection?.switchable ?? false, blend: this.viewState.projectionBlend },
       fps: this.fps,
       debug: this.debug,
       muted: this.audio.muted,
@@ -480,6 +491,7 @@ function toBridgeSnapshot(b: BridgeStatus): BridgeSnapshot {
     plane: b.def.plane,
     plane2: b.def.plane2 ?? null,
     second: b.def.vertex2 !== undefined ? toTargetSnapshot(ev?.second) : null,
+    projection: b.def.projection ?? null,
     visible: b.visible,
     locked: b.locked,
     ...toTargetSnapshot(first),

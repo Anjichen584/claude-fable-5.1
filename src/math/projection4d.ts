@@ -31,6 +31,22 @@ export function projectOrthographic(v: Vec4): Vec3 {
 
 export type ProjectionMode = 'perspective' | 'orthographic';
 
+/**
+ * 透视与正交之间的连续混合（第四章投影切换的过渡动画用）。
+ * blend = 0 → 纯透视；blend = 1 → 纯正交；中间线性插值两种投影结果。
+ */
+export function projectBlend(v: Vec4, blend: number, cfg: ProjectionConfig = DEFAULT_PROJECTION): Vec3 {
+  if (blend <= 0) return projectPerspective(v, cfg);
+  if (blend >= 1) return projectOrthographic(v);
+  const p = projectPerspective(v, cfg);
+  const o = projectOrthographic(v);
+  return [p[0] + (o[0] - p[0]) * blend, p[1] + (o[1] - p[1]) * blend, p[2] + (o[2] - p[2]) * blend];
+}
+
+export function blendOf(mode: ProjectionMode): number {
+  return mode === 'orthographic' ? 1 : 0;
+}
+
 export function project(v: Vec4, mode: ProjectionMode, cfg: ProjectionConfig = DEFAULT_PROJECTION): Vec3 {
   return mode === 'perspective' ? projectPerspective(v, cfg) : projectOrthographic(v);
 }

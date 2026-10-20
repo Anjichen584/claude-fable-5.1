@@ -1,6 +1,7 @@
-import { distance3, involvesW, matchesShape, rotateAll, sectionSignature, sliceHyperplane, type Plane, type Polytope4, type Rotation4D, type SectionSignature, type Vec3 } from '../math';
+import { DEFAULT_PROJECTION, distance3, involvesW, matchesShape, rotateAll, sectionSignature, sliceHyperplane, type Plane, type Polytope4, type Rotation4D, type SectionSignature, type Vec3 } from '../math';
 import { bridgePlanes, combineDualEvaluation, evaluateBridge, pointInAnyAABBxz, resolveAnchor, resolveAnchor2, toleranceOf, vertexWorldPosition, type BridgeEvaluation } from './PuzzleRules';
 import type { AABB, BridgeDef, GateDef, LevelDef, NodeDef } from './types';
+import type { ProjectionMode } from '../math';
 
 export interface BridgeStatus {
   def: BridgeDef;
@@ -39,6 +40,10 @@ export interface PuzzleFrameInput {
   sliceW0: number | null;
   /** 本帧玩家是否旋转了任一 W 平面（用于 noW 提示） */
   rotatedW: boolean;
+  /** 当前投影混合：0 透视（默认）… 1 正交。桥的判定用它算当前端点位置。 */
+  projectionBlend?: number;
+  /** 当前投影方式（用于 projection:<mode> 提示） */
+  projectionMode?: ProjectionMode;
 }
 
 /**
@@ -46,6 +51,7 @@ export interface PuzzleFrameInput {
  * 纯逻辑，不含渲染；每帧由 GameController 喂入姿态与玩家位置。
  */
 export class PuzzleSession {
+  private lastProjection: ProjectionMode | null = null;
   readonly level: LevelDef;
   readonly bridges: BridgeStatus[];
   readonly nodes: NodeStatus[];
@@ -97,13 +103,13 @@ export class PuzzleSession {
   }
 
   /** 评估一座桥在给定姿态下的状态（含双旋桥的第二目标），不改动状态。 */
-  evaluate(bridge: BridgeDef, rotation: Rotation4D): BridgeEvaluation {
+  evaluate(bridge: BridgeDef, rotation: Rotation4D, projectionBlend = 0): BridgeEvaluation {
     const anchor = this.anchorOf(bridge);
-    const endpoint = vertexWorldPosition(this.poly, bridge.vertex, rotation, this.level.core);
+    const endpoint = vertexWorldPosition(this.poly, bridge.vertex, rotation, this.level.core, DEFAULT_PROJECTION, projectionBlend);
     const first = evaluateBridge(bridge, endpoint, anchor);
     if (bridge.vertex2 === undefined) return first;
     const anchor2 = resolveAnchor2(this.poly, bridge, this.level.core) as Vec3;
-    const endpoint2 = vertexWorldPosition(this.poly, bridge.vertex2, rotation, this.level.core);
+    const endpoint2 = vertexWorldPosition(this.poly, bridge.vertex2, rotation, this.level.core, DEFAULT_PROJECTION, projectionBlend);
     return combineDualEvaluation(first, evaluateBridge(bridge, endpoint2, anchor2));
   }
 
@@ -112,6 +118,10 @@ export class PuzzleSession {
     if (this.completed) return [];
     this.elapsed += input.dt;
     if (input.rotatedW) this.everRotatedW = true;
+    if (input.projectionMode && input.projectionMode !== this.lastProjection) {
+      if (this.lastProjection !== null) this.fireHints(`projection:${input.projectionMode}`);
+      this.lastProjection = input.projectionMode;
+    }
 
     // 桥
     for (const b of this.bridges) {
@@ -123,7 +133,7 @@ export class PuzzleSession {
         b.progress = 0;
         continue;
       }
-      b.evaluation = this.evaluate(b.def, input.rotation);
+      b.evaluation = this.evaluate(b.def, input.rotation, input.projectionBlend ?? 0);
       const tol = toleranceOf(b.def);
       if (b.evaluation.satisfied) {
         b.hold += input.dt;

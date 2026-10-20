@@ -1,4 +1,4 @@
-import type { Plane, Rotation4D, ShapeRequirement, Tilt, Vec3, Vec4 } from '../math';
+import type { Plane, ProjectionMode, Rotation4D, ShapeRequirement, Tilt, Vec3, Vec4 } from '../math';
 
 /** 轴对齐包围盒（世界坐标）。可行走判定只用 x/z；y 用于渲染高度。 */
 export interface AABB {
@@ -47,6 +47,11 @@ export interface BridgeDef {
    */
   vertex2?: TargetRef;
   plane2?: Plane;
+  /**
+   * 第四章：锚点在哪种投影下求得（默认透视）。判定始终用玩家**当前**的投影方式，
+   * 所以透视锚点在正交下够不着，反之亦然——这就是"投影不是物体本身"。
+   */
+  projection?: ProjectionMode;
   /** 前置条件：这些节点/桥激活后，锚点才出现并开始判定 */
   requires?: string[];
   tolerance?: Partial<BridgeTolerance>;
@@ -127,6 +132,11 @@ export interface LevelDef {
      * 两平面正交时旋转可交换，所以"同时转"与"先后转相同角度"结果一致。
      */
     linked?: [Plane, Plane];
+    /**
+     * 第四章：投影方式。initial 为开局投影；switchable 时玩家可按 P 在透视/正交间切换。
+     * 未定义 = 透视且不可切换（前三章）。
+     */
+    projection?: { initial: ProjectionMode; switchable: boolean };
   };
   bridges: BridgeDef[];
   nodes: NodeDef[];

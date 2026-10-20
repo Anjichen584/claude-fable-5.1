@@ -50,12 +50,15 @@ describe.each(LEVELS.map((l) => [l.id, l] as const))('关卡 %s', (_id, level) =
     const anchor2 = resolveAnchor2(T, bridge, level.core);
     const planes = bridgePlanes(bridge);
     const dual = bridge.vertex2 !== undefined;
+    /** 第四章：对径顶点对（v, −v）只用一个平面，靠投影方式区分，不是"双旋"桥 */
+    const antipodal = dual && bridge.plane === bridge.plane2;
+    const blend = math.blendOf(bridge.projection ?? 'perspective');
 
-    /** 与 PuzzleSession.evaluate 一致的完整评估（含双旋第二目标） */
-    const evalAt = (r: Rotation4D): BridgeEvaluation => {
-      const first = evaluateBridge(bridge, vertexWorldPosition(T, bridge.vertex, r, level.core), anchor);
+    /** 与 PuzzleSession.evaluate 一致的完整评估（含双旋第二目标），在桥所要求的投影下 */
+    const evalAt = (r: Rotation4D, b = blend): BridgeEvaluation => {
+      const first = evaluateBridge(bridge, vertexWorldPosition(T, bridge.vertex, r, level.core, math.DEFAULT_PROJECTION, b), anchor);
       if (!dual) return first;
-      const second = evaluateBridge(bridge, vertexWorldPosition(T, bridge.vertex2 as number, r, level.core), anchor2 as Vec3);
+      const second = evaluateBridge(bridge, vertexWorldPosition(T, bridge.vertex2 as number, r, level.core, math.DEFAULT_PROJECTION, b), anchor2 as Vec3);
       return combineDualEvaluation(first, second);
     };
     const withSolution = (r: Rotation4D, delta = 0): Rotation4D => {
@@ -105,7 +108,19 @@ describe.each(LEVELS.map((l) => [l.id, l] as const))('关卡 %s', (_id, level) =
       expect(minDist).toBeGreaterThan(tol.distance * 1.5);
     });
 
-    if (dual) {
+    if (antipodal) {
+      it('投影桥：在另一种投影下，指定平面任意角度（0.5° 步进）都无法同时满足两个目标', () => {
+        const other = 1 - blend;
+        for (const p of planes) {
+          for (let k = -180; k < 180; k += 0.5) {
+            const r = { ...base, [p]: base[p] + (k * Math.PI) / 180 };
+            expect(evalAt(r, other).satisfied).toBe(false);
+          }
+        }
+      });
+    }
+
+    if (dual && !antipodal) {
       it('双旋桥：任何单一平面的旋转（1° 步进，全部六个平面）都无法同时满足两个目标', () => {
         for (const p of PLANES) {
           for (let k = -180; k < 180; k += 1) {
@@ -178,6 +193,27 @@ describe('章节结构', () => {
       expect(lv.nodes.every((n) => n.trigger.kind === 'shape')).toBe(true);
       expect(lv.slice?.enabled).toBe(true);
     }
+  });
+
+  it('第四章每关可切换投影，每座桥都是对径顶点对且声明了 projection；至少一座透视桥与一座正交桥', () => {
+    const ch = CHAPTERS[3];
+    expect(ch.index).toBe(4);
+    expect(ch.levels.map((l) => l.id)).toEqual(['shadow', 'silhouette', 'twotruths']);
+    const modes = new Set<string>();
+    for (const lv of ch.levels) {
+      expect(lv.core.projection?.switchable).toBe(true);
+      for (const b of lv.bridges) {
+        expect(b.projection).toBeDefined();
+        modes.add(b.projection as string);
+        expect(typeof b.vertex).toBe('number');
+        const v = T.vertices[b.vertex as number];
+        const v2 = T.vertices[b.vertex2 as number];
+        for (let k = 0; k < 4; k++) expect(v2[k]).toBe(-v[k]);
+      }
+      // 开局投影与第一座桥要求的投影相反：必须切换才能解
+      expect(lv.core.projection?.initial).not.toBe(lv.bridges[0].projection);
+    }
+    expect(modes).toEqual(new Set(['perspective', 'orthographic']));
   });
 
   it('第二章每关至少有一座双旋桥；等角关的 linked 平面正交且与桥的平面一致', () => {
@@ -421,5 +457,32 @@ describe('第三章 截面 状态机', () => {
       const sig = math.sectionSignature(T, math.sliceHyperplane(T, math.rotateAll(T.vertices, { ...three, ...extra }), -1.6));
       expect(sig).toEqual(base);
     }
+  });
+});
+
+describe('第四章 投影 状态机', () => {
+  const L10 = LEVELS.find((l) => l.id === 'shadow') as LevelDef;
+  const d2r = (x: number) => (x * Math.PI) / 180;
+  const I = math.identityRotation();
+  const frame = (rotation: Rotation4D, blend: number, mode: math.ProjectionMode, dt = 0.1) => ({ dt, rotation, playerPosition: [0, 0, 5] as Vec3, sliceW0: null, rotatedW: true, projectionBlend: blend, projectionMode: mode });
+
+  it('Shadow：解姿态在正交下不满足、在透视下锁定；切换投影触发 projection:perspective 提示', () => {
+    const s = new PuzzleSession(L10, T);
+    const sol = { ...I, XW: d2r(-110) };
+    for (let i = 0; i < 6; i++) s.update(frame(sol, 1, 'orthographic'));
+    expect(s.bridges[0].locked).toBe(false);
+    expect(s.bridges[0].evaluation?.satisfied).toBe(false);
+    const events = s.update(frame(sol, 0, 'perspective'));
+    expect(events.some((e) => e.type === 'hint' && e.id === 'h-persp')).toBe(true);
+    for (let i = 0; i < 6; i++) s.update(frame(sol, 0, 'perspective'));
+    expect(s.bridges[0].locked).toBe(true);
+    expect(s.exitReady).toBe(true);
+  });
+
+  it('过渡中（blend = 0.5）两个目标不会同时满足', () => {
+    const s = new PuzzleSession(L10, T);
+    const sol = { ...I, XW: d2r(-110) };
+    for (let i = 0; i < 6; i++) s.update(frame(sol, 0.5, 'perspective'));
+    expect(s.bridges[0].locked).toBe(false);
   });
 });

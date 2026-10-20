@@ -437,7 +437,165 @@ export const LEVEL_9: LevelDef = {
   ],
 };
 
-export const LEVELS: readonly LevelDef[] = [LEVEL_1, LEVEL_2, LEVEL_3, LEVEL_4, LEVEL_5, LEVEL_6, LEVEL_7, LEVEL_8, LEVEL_9];
+// ===========================================================================
+// 第四章 Shadows 投影之辨
+// 概念：投影不是物体本身。同一个姿态，透视投影与正交投影给出不同的影子。
+//   正交投影丢掉 w：对径顶点 v 与 −v 的影子永远中心对称（等距、反向）。
+//   透视投影 s = d/(d−w)：w 大的顶点被放大、w 小的被缩小，对径顶点距离不等。
+//   → 两个锚点"等距反向"= 只有正交做得到；"一近一远"= 只有透视做得到。
+// 机制：P 键切换投影（0.45 s 过渡）；桥的 projection 字段决定锚点在哪种投影下求得，
+//       判定永远用玩家当前的投影 → 投影不对，怎么转都够不着。
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Level 10 — Shadow：开局正交，锚点一近一远 → 必须切到透视
+// ---------------------------------------------------------------------------
+export const LEVEL_10: LevelDef = {
+  id: 'shadow',
+  index: 10,
+  chapter: 4,
+  title: 'Shadow',
+  subtitle: '影子',
+  platforms: [
+    { min: [-2, -T, 2.5], max: [2, 0, 7] },
+    { min: [-2, -T, -7], max: [2, 0, -2.5] },
+  ],
+  playerStart: [0, 0, 5],
+  core: {
+    position: [0, 2.6, 0],
+    scale: 1.2,
+    initialRotation: rot({}),
+    tilt: { pitch: 0.3, yaw: 0.5 },
+    allowedPlanes: ['XW'],
+    projection: { initial: 'orthographic', switchable: true },
+  },
+  bridges: [
+    {
+      id: 'bridge-1',
+      start: [0, 0, 2.5],
+      walkable: { min: [-0.7, -T, -2.6], max: [0.7, 0, 2.6] },
+      vertex: 0,
+      plane: 'XW',
+      vertex2: 15,
+      plane2: 'XW',
+      solution: rot({ XW: deg(-110) }),
+      projection: 'perspective',
+    },
+  ],
+  nodes: [],
+  exit: { position: [0, 0, -5.5], radius: 0.9, requires: ['bridge-1'] },
+  hints: [
+    { id: 'h-start', when: 'start', text: '这是正交投影下的核心——十六个顶点两两重合，看起来只是个立方体。两个共振点是一对对径顶点（0 与 15）。' },
+    { id: 'h-w', when: 'noW:8', text: '正交投影里，对径的两个顶点永远离中心一样远、方向相反。可这两个锚点一近一远——这个影子里没有答案。按 P 换一种影子。' },
+    { id: 'h-persp', when: 'projection:perspective', text: '透视投影：w 大的顶点被放大，w 小的被缩小。现在用 XW（Q / E）把 0 推远、把 15 拉近。' },
+    { id: 'h-done', when: 'activated:bridge-1', text: '物体没变，变的是投影。影子里的"远近"是透视给的，不是物体自带的。' },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Level 11 — Silhouette：开局透视，锚点等距反向 → 必须切到正交
+// ---------------------------------------------------------------------------
+export const LEVEL_11: LevelDef = {
+  id: 'silhouette',
+  index: 11,
+  chapter: 4,
+  title: 'Silhouette',
+  subtitle: '剪影',
+  platforms: [
+    { min: [-2, -T, 2.5], max: [2, 0, 7] },
+    { min: [-2, -T, -7], max: [2, 0, -2.5] },
+  ],
+  playerStart: [0, 0, 5],
+  core: {
+    position: [0, 2.6, 0],
+    scale: 1.2,
+    initialRotation: rot({}),
+    tilt: { pitch: 0.3, yaw: 0.5 },
+    allowedPlanes: ['YW'],
+    projection: { initial: 'perspective', switchable: true },
+  },
+  bridges: [
+    {
+      id: 'bridge-1',
+      start: [0, 0, 2.5],
+      walkable: { min: [-0.7, -T, -2.6], max: [0.7, 0, 2.6] },
+      vertex: 1,
+      plane: 'YW',
+      vertex2: 14,
+      plane2: 'YW',
+      solution: rot({ YW: deg(60) }),
+      projection: 'orthographic',
+    },
+  ],
+  nodes: [],
+  exit: { position: [0, 0, -5.5], radius: 0.9, requires: ['bridge-1'] },
+  hints: [
+    { id: 'h-start', when: 'start', text: '这回两个锚点到核心中心一样远、方向正好相反。共振点仍是一对对径顶点（1 与 14）。' },
+    { id: 'h-w', when: 'noW:8', text: '透视里对径顶点只有在 w 相等（都为 0）时才会等距，而那只发生在一个特定半径上。换正交（P）：它从不区分远近。' },
+    { id: 'h-ortho', when: 'projection:orthographic', text: '正交投影：丢掉 w，只留 x y z。现在 YW（Z / C）只会让两个顶点沿一条线对称地滑动。' },
+    { id: 'h-done', when: 'activated:bridge-1', text: '正交投影保留对称、丢掉深度；透视保留深度、打破对称。两种影子各说一半真话。' },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Level 12 — Two Truths：透视桥 → 中继 → 正交桥（章末综合）
+// ---------------------------------------------------------------------------
+export const LEVEL_12: LevelDef = {
+  id: 'twotruths',
+  index: 12,
+  chapter: 4,
+  title: 'Two Truths',
+  subtitle: '两种真相',
+  platforms: [
+    { min: [-2, -T, 4], max: [2, 0, 8] },
+    { min: [-2.5, -T, -1.5], max: [2.5, 0, 1.5] },
+    { min: [-2, -T, -8], max: [2, 0, -4] },
+  ],
+  playerStart: [0, 0, 6],
+  core: {
+    position: [0, 3.1, 0],
+    scale: 1.2,
+    initialRotation: rot({}),
+    tilt: { pitch: 0.3, yaw: 0.5 },
+    allowedPlanes: ['XW', 'YW'],
+    projection: { initial: 'orthographic', switchable: true },
+  },
+  bridges: [
+    {
+      id: 'bridge-a',
+      start: [0, 0, 4],
+      walkable: { min: [-0.7, -T, 1.4], max: [0.7, 0, 4.1] },
+      vertex: 0,
+      plane: 'XW',
+      vertex2: 15,
+      plane2: 'XW',
+      solution: rot({ XW: deg(-110) }),
+      projection: 'perspective',
+    },
+    {
+      id: 'bridge-b',
+      start: [0, 0, -1.5],
+      walkable: { min: [-0.7, -T, -4.1], max: [0.7, 0, -1.4] },
+      vertex: 1,
+      plane: 'YW',
+      vertex2: 14,
+      plane2: 'YW',
+      solution: rot({ XW: deg(-110), YW: deg(60) }),
+      projection: 'orthographic',
+      requires: ['relay'],
+    },
+  ],
+  nodes: [{ id: 'relay', position: [0, 0, 0], trigger: { kind: 'reach', radius: 0.9 }, requires: ['bridge-a'] }],
+  exit: { position: [0, 0, -6.5], radius: 0.9, requires: ['bridge-b'] },
+  hints: [
+    { id: 'h-start', when: 'start', text: '章末综合。第一座桥一近一远，第二座桥等距反向。看清每座桥要的是哪种影子。' },
+    { id: 'h-a', when: 'activated:bridge-a', text: '透视桥锁定，XW 固定。走到中继，再决定下一座桥用哪种投影。' },
+    { id: 'h-relay', when: 'activated:relay', text: '第二座桥：两个锚点等距反向——正交（P），然后 YW（Z / C）。' },
+    { id: 'h-done', when: 'activated:bridge-b', text: '同一个四维姿态，两种投影各开一扇门。你看到的从来不是物体，是你选择的那种影子。' },
+  ],
+};
+
+export const LEVELS: readonly LevelDef[] = [LEVEL_1, LEVEL_2, LEVEL_3, LEVEL_4, LEVEL_5, LEVEL_6, LEVEL_7, LEVEL_8, LEVEL_9, LEVEL_10, LEVEL_11, LEVEL_12];
 
 export function levelByIndex(index: number): LevelDef | undefined {
   return LEVELS.find((l) => l.index === index);

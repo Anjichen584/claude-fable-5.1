@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {
   isInnerVertex,
-  projectAll,
+  projectBlend,
   rotateAll,
   sliceHyperplane,
   type Polytope4,
@@ -158,7 +158,7 @@ export class TesseractView {
   /** 每帧调用：四维旋转 → 投影 → 写入几何。 */
   update(state: ViewState, time: number): void {
     const rotated = rotateAll(this.poly.vertices, state.rotation);
-    const projected = projectAll(rotated, 'perspective', state.projection);
+    const projected = rotated.map((v) => projectBlend(v, state.projectionBlend, state.projection));
     this.projected = projected;
 
     // 边
@@ -188,7 +188,7 @@ export class TesseractView {
     // 切片
     if (state.slice.enabled) {
       const s = sliceHyperplane(this.poly, rotated, state.slice.w0);
-      const sp = projectAll(s.points, 'perspective', state.projection);
+      const sp = s.points.map((v) => projectBlend(v, state.projectionBlend, state.projection));
       const pos = this.sliceGeom.getAttribute('position') as THREE.BufferAttribute;
       const arr = pos.array as Float32Array;
       const n = Math.min(s.segments.length, this.sliceCapacity);
