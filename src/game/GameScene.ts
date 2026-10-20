@@ -81,7 +81,8 @@ export class GameScene {
         this.dispose();
       }
     };
-    loop();
+    // 首帧异步启动，保证调用方的构造函数先完成
+    this.rafId = requestAnimationFrame(loop);
   }
 
   resize(): void {

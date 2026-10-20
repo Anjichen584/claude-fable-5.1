@@ -125,3 +125,19 @@ describe('wrapAngle', () => {
     expect(wrapAngle(-Math.PI * 2 - 0.5)).toBeCloseTo(-0.5);
   });
 });
+
+describe('应用顺序的不变量', () => {
+  it('在任意 W 姿态下，叠加 XY/XZ/YZ 旋转都不改变任何顶点的 w', () => {
+    const base = { ...identityRotation(), XW: 0.9, YW: -0.4, ZW: 1.7 };
+    const w0 = rotateAll(T.vertices, base).map((v) => v[3]);
+    for (const r of [
+      { ...base, XY: 0.5 },
+      { ...base, XZ: -1.2 },
+      { ...base, YZ: 2.2 },
+      { ...base, XY: 0.3, XZ: 0.7, YZ: -0.9 },
+    ]) {
+      const w1 = rotateAll(T.vertices, r).map((v) => v[3]);
+      w1.forEach((w, i) => expect(w).toBeCloseTo(w0[i], 10));
+    }
+  });
+});

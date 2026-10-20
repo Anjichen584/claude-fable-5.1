@@ -1,7 +1,11 @@
 import { PLANES, involvesW, type Plane } from '../math';
 import { resetViewState, type ViewState } from '../game/ViewState';
-import { SLICE_RANGE } from '../game/CoreController';
-import type { EngineHandle } from './useEngine';
+const SLICE_RANGE: readonly [number, number] = [-2.2, 2.2];
+
+export interface EngineHandle {
+  state: ViewState;
+  touch: () => void;
+}
 
 interface Props {
   snapshot: ViewState;
@@ -116,7 +120,7 @@ function PlaneRow({ plane, value, active, onChange, onSelect }: {
 
 const styles: Record<string, React.CSSProperties> = {
   panel: {
-    position: 'absolute', top: 16, left: 16, width: 320,
+    position: 'absolute', right: 16, bottom: 16, width: 320,
     padding: '14px 16px 12px',
     background: 'rgba(6, 10, 24, 0.78)',
     border: '1px solid rgba(56,232,255,0.25)',

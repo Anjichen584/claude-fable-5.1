@@ -54,8 +54,14 @@ export function cloneRotation(r: Rotation4D): Rotation4D {
   return { ...r };
 }
 
-/** 固定应用顺序：XY → XZ → YZ → XW → YW → ZW。四维旋转不可交换，顺序必须确定。 */
-export const ROTATION_ORDER: readonly Plane[] = PLANES;
+/**
+ * 固定应用顺序：XW → YW → ZW → XY → XZ → YZ。
+ * 四维旋转不可交换，顺序必须确定；并且 W 平面在前、三维平面在后有一个关键性质：
+ * 三维平面（XY/XZ/YZ）只混合 x/y/z，作用在已完成 W 旋转的结果上，不会改变任何顶点的 w。
+ * 因此无论当前 W 角度是多少，纯三维旋转都只等价于把投影整体做三维旋转——
+ * 这是"必须使用 W 才能解谜"这一关卡规则在任何状态下都成立的数学依据。
+ */
+export const ROTATION_ORDER: readonly Plane[] = ['XW', 'YW', 'ZW', 'XY', 'XZ', 'YZ'];
 
 export function applyRotation(v: Vec4, r: Rotation4D): Vec4 {
   let out = v;
