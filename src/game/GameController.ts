@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { blendOf, createPolytope, createTesseract, POLYTOPE_NAMES, W_PLANES, type Plane, type Polytope4, type PolytopeKind, type ProjectionMode, type Rotation4D, sectionName } from '../math';
 import { LEVELS } from '../puzzle/levels';
 import { CHAPTERS, chapterOf, isLastInChapter, nextChapter } from '../puzzle/chapters';
+import { chapterDone, clearProgress, continueLevel, formatTime, isLevelCompleted, loadProgress, recordLevelComplete, saveProgress, totalDone, withLastLevel, type Progress } from '../puzzle/progress';
 import type { ChapterDef } from '../puzzle/types';
 import { PuzzleSession, type BridgeStatus, type PuzzleEvent } from '../puzzle/PuzzleSession';
 import type { LevelDef } from '../puzzle/types';
@@ -49,8 +50,12 @@ export interface ChapterSnapshot {
   /** 当前关在章内的序号（1 起） */
   levelInChapter: number;
   hasNext: boolean;
-  /** 已通关（localStorage） */
+  /** 已通关（存档：本章所有关都已通关） */
   completed: boolean;
+  /** 本章已通关的关数 */
+  done: number;
+  /** 本章各关（菜单选关用） */
+  levels: Array<{ index: number; title: string; subtitle: string; completed: boolean; bestTime: number | null }>;
 }
 
 export interface GameSnapshot {
@@ -79,6 +84,8 @@ export interface GameSnapshot {
   exitReady: boolean;
   hint: string | null;
   slice: { enabled: boolean; w0: number } | null;
+  /** 存档：继续应进入的关（无存档为 null）、总通关数、本关计时与最佳 */
+  progress: { continueLevel: number | null; totalDone: number; levelCount: number; levelTime: number; bestTime: number | null; isNewBest: boolean; completedBefore: boolean };
   /** 第七章：本关玩家轨迹（仅在 complete / won 阶段附带，避免每帧拷贝） */
   trail: { samples: TrailSample[]; stats: TrailStats; levelTitle: string } | null;
   /** 第六章：玩家自身的 w；未启用时 null */
@@ -106,6 +113,10 @@ export class GameController {
   readonly audio = new AudioEngine();
   phase: GamePhase = 'menu';
   private readonly trail = new Trail();
+  private progress: Progress = loadProgress(typeof localStorage !== 'undefined' ? localStorage : null);
+  /** 本关已玩时长（仅 playing 累计） */
+  private levelTime = 0;
+  private lastResult: { isNewBest: boolean; completedBefore: boolean } = { isNewBest: false, completedBefore: false };
   private wonChapter: ChapterDef | null = null;
   debug = false;
 
@@ -196,6 +207,10 @@ export class GameController {
     this.player.setPosition(level.playerStart);
     this.player.facing = Math.PI;
     this.trail.reset();
+    this.levelTime = 0;
+    this.lastResult = { isNewBest: false, completedBefore: isLevelCompleted(this.progress, level) };
+    this.progress = withLastLevel(this.progress, level.index);
+    saveProgress(this.storage(), this.progress);
     this.player.wEnabled = level.playerW?.enabled ?? false;
     this.player.w = level.playerW?.initial ?? 0;
     this.player.wRange = level.playerW?.range ?? [0, 0];
@@ -232,7 +247,6 @@ export class GameController {
     if (!this.level) return;
     if (isLastInChapter(this.level)) {
       const ch = chapterOf(this.level);
-      markChapterCompleted(ch.id);
       this.wonChapter = ch;
       this.phase = 'won';
       this.emitSnapshot();
@@ -315,6 +329,7 @@ export class GameController {
       const fl = Math.hypot(camDir.x, camDir.z) || 1;
       this.player.update(dt, inp, [camDir.x / fl, camDir.z / fl], this.session.walkable(), t);
       this.trail.push(this.player.position, this.player.w, t);
+      this.levelTime += dt;
       if (import.meta.env.DEV) (window as unknown as { __nexusPlayer?: unknown }).__nexusPlayer = { x: this.player.position[0], z: this.player.position[2], w: this.player.w };
       if (this.coreController.sliceFollowsPlayer && this.level.slice) {
         // 第六章："你自己就是切片"：切片 w₀ 跟随玩家 w
@@ -411,12 +426,19 @@ export class GameController {
           if (next && this.coreController.allowedPlanes.has(next.def.plane)) this.viewState.activePlane = next.def.plane;
           break;
         }
-        case 'levelComplete':
+        case 'levelComplete': {
           this.phase = 'complete';
+          if (this.level) {
+            const r = recordLevelComplete(this.progress, this.level, this.levelTime);
+            this.progress = r.progress;
+            this.lastResult = { ...this.lastResult, isNewBest: r.isNewBest };
+            saveProgress(this.storage(), this.progress);
+          }
           this.audio.setResonance(0, 0);
           this.audio.setRotating(false, false);
           this.audio.playComplete();
           break;
+        }
         default:
           break;
       }
@@ -473,6 +495,15 @@ export class GameController {
       exitReady: s?.exitReady ?? false,
       hint: this.hint,
       slice: l?.slice ? { ...this.viewState.slice } : null,
+      progress: {
+        continueLevel: continueLevel(this.progress),
+        totalDone: totalDone(this.progress),
+        levelCount: LEVELS.length,
+        levelTime: this.levelTime,
+        bestTime: l ? (this.progress.levels[l.id]?.bestTime ?? null) : null,
+        isNewBest: this.lastResult.isNewBest,
+        completedBefore: this.lastResult.completedBefore,
+      },
       trail: (this.phase === 'complete' || this.phase === 'won') && this.trail.samples.length > 1 ? { samples: this.trail.samples.slice(), stats: trailStats(this.trail.samples), levelTitle: l?.title ?? '' } : null,
       playerW: this.player.wEnabled ? { w: this.player.w, range: [this.player.wRange[0], this.player.wRange[1]], blocked: this.player.wBlocked, sliceFollows: this.coreController.sliceFollowsPlayer } : null,
       polytope: { kind: this.poly.name as PolytopeKind, name: POLYTOPE_NAMES[this.poly.name as PolytopeKind], vertices: this.poly.vertices.length, edges: this.poly.edges.length, cells: this.poly.cells.length },
@@ -495,8 +526,31 @@ export class GameController {
       levelCount: ch.levels.length,
       levelInChapter: pos >= 0 ? pos + 1 : 0,
       hasNext: nextChapter(ch) !== undefined,
-      completed: isChapterCompleted(ch.id),
+      completed: chapterDone(this.progress, ch).completed,
+      done: chapterDone(this.progress, ch).done,
+      levels: ch.levels.map((lv) => ({ index: lv.index, title: lv.title, subtitle: lv.subtitle, completed: isLevelCompleted(this.progress, lv), bestTime: this.progress.levels[lv.id]?.bestTime ?? null })),
     };
+  }
+
+  private storage(): Storage | null {
+    return typeof localStorage !== 'undefined' ? localStorage : null;
+  }
+
+  /** 菜单"继续"：进入存档推荐的关 */
+  continueGame(): void {
+    const idx = continueLevel(this.progress);
+    this.startLevel(idx ?? 1);
+  }
+
+  /** 清空存档（菜单） */
+  resetProgress(): void {
+    this.progress = clearProgress(this.storage());
+    this.emitSnapshot();
+  }
+
+  /** 本关用时（格式化，HUD 用） */
+  get levelTimeText(): string {
+    return formatTime(this.levelTime);
   }
 
   dispose(): void {
@@ -535,26 +589,4 @@ function toBridgeSnapshot(b: BridgeStatus): BridgeSnapshot {
     ...toTargetSnapshot(first),
     progress: b.progress,
   };
-}
-
-const COMPLETED_KEY = 'nexus4d.completedChapters';
-function readCompleted(): Set<string> {
-  try {
-    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(COMPLETED_KEY) : null;
-    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
-  } catch {
-    return new Set();
-  }
-}
-function isChapterCompleted(id: string): boolean {
-  return readCompleted().has(id);
-}
-function markChapterCompleted(id: string): void {
-  try {
-    const set = readCompleted();
-    set.add(id);
-    localStorage.setItem(COMPLETED_KEY, JSON.stringify([...set]));
-  } catch {
-    /* 无存储环境忽略 */
-  }
 }

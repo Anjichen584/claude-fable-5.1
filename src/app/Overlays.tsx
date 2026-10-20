@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { ChapterSnapshot, GameSnapshot } from '../game/GameController';
 import { trailColor, trailTopDown, trailWProfile } from '../puzzle/trail';
+import { formatTime } from '../puzzle/progress';
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 const CYAN = '#38e8ff';
@@ -8,7 +9,20 @@ const CYAN = '#38e8ff';
 const CN_NUM = ['零', '一', '二', '三', '四', '五', '六', '七'];
 export const cnChapter = (i: number) => `第${CN_NUM[i] ?? i}章`;
 
-export function MainMenu({ onStart, onStartChapter, chapters, muted, onToggleMute }: { onStart: () => void; onStartChapter: (index: number) => void; chapters: ChapterSnapshot[]; muted: boolean; onToggleMute: () => void }) {
+export function MainMenu({ onStart, onContinue, onStartChapter, onStartLevel, onResetProgress, chapters, progress, muted, onToggleMute }: {
+  onStart: () => void;
+  onContinue: () => void;
+  onStartChapter: (index: number) => void;
+  onStartLevel: (index: number) => void;
+  onResetProgress: () => void;
+  chapters: ChapterSnapshot[];
+  progress: GameSnapshot['progress'];
+  muted: boolean;
+  onToggleMute: () => void;
+}) {
+  const cont = progress.continueLevel;
+  const contLevel = cont !== null ? chapters.flatMap((c) => c.levels).find((l) => l.index === cont) : undefined;
+  const allDone = progress.totalDone >= progress.levelCount;
   return (
     <Overlay dim={0.35}>
       <MuteButton muted={muted} onToggle={onToggleMute} />
@@ -17,27 +31,69 @@ export function MainMenu({ onStart, onStartChapter, chapters, muted, onToggleMut
         NEXUS<span style={{ color: CYAN }}>:</span> 4D
       </div>
       <div style={{ marginTop: 14, color: '#9fb3d9', fontSize: 14 }}>你看到的，只是这个世界的一个切面。</div>
-      <Button onClick={onStart} style={{ marginTop: 36 }}>开始</Button>
-      <div style={{ marginTop: 22, fontSize: 10, letterSpacing: '0.3em', color: '#4a5a80' }}>选择章节 · 一章一天</div>
-      <div style={{ display: 'flex', gap: 10, marginTop: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+      <div style={{ display: 'flex', gap: 12, marginTop: 36, alignItems: 'center' }}>
+        {cont !== null && !allDone ? (
+          <>
+            <Button onClick={onContinue} data-testid="continue">继续 · 第 {cont} 关{contLevel ? ` ${contLevel.title}` : ''}</Button>
+            <Button onClick={onStart} ghost>从头开始</Button>
+          </>
+        ) : (
+          <Button onClick={onStart}>{allDone ? '再来一遍' : '开始'}</Button>
+        )}
+      </div>
+      {progress.totalDone > 0 && (
+        <div style={{ marginTop: 10, fontSize: 11, color: '#6a7aa0', fontFamily: MONO }} data-testid="progress-line">
+          已通关 {progress.totalDone} / {progress.levelCount} 关{allDone ? ' · 七天全部完成' : ''}
+        </div>
+      )}
+      <div style={{ marginTop: 22, fontSize: 10, letterSpacing: '0.3em', color: '#4a5a80' }}>选择章节 · 一章一天 · 点关卡序号可直达</div>
+      <div style={{ display: 'flex', gap: 10, marginTop: 10, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 960 }}>
         {chapters.map((c) => (
-          <button
+          <div
             key={c.index}
-            onClick={() => onStartChapter(c.index)}
             style={{
-              padding: '10px 14px', borderRadius: 6, cursor: 'pointer', fontFamily: MONO, textAlign: 'left', minWidth: 190,
+              padding: '10px 14px', borderRadius: 6, fontFamily: MONO, textAlign: 'left', minWidth: 190, maxWidth: 260,
               background: 'rgba(255,255,255,0.03)', color: '#dbe7ff',
-              border: `1px solid ${c.completed ? 'rgba(255,209,102,0.55)' : 'rgba(159,179,217,0.3)'}`,
+              border: `1px solid ${c.completed ? 'rgba(255,209,102,0.55)' : c.done > 0 ? 'rgba(56,232,255,0.4)' : 'rgba(159,179,217,0.3)'}`,
             }}
           >
-            <div style={{ fontSize: 10, letterSpacing: '0.25em', color: c.completed ? '#ffd166' : '#6fa8ff' }}>
-              DAY {c.index}{c.completed ? ' · 已通关' : ''}
+            <button onClick={() => onStartChapter(c.index)} style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%' }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.25em', color: c.completed ? '#ffd166' : '#6fa8ff' }}>
+                DAY {c.index}{c.completed ? ' · 已通关' : c.done > 0 ? ` · ${c.done}/${c.levelCount}` : ''}
+              </div>
+              <div style={{ fontSize: 14, marginTop: 3 }}>{cnChapter(c.index)} · {c.subtitle} <span style={{ color: '#6a7aa0', fontSize: 11 }}>{c.title}</span></div>
+              <div style={{ fontSize: 11, color: '#9fb3d9', marginTop: 3 }}>{c.levelCount} 关 · {c.concept}</div>
+            </button>
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              {c.levels.map((l) => (
+                <button
+                  key={l.index}
+                  onClick={() => onStartLevel(l.index)}
+                  title={`${l.title} ${l.subtitle}${l.bestTime !== null ? ` · 最佳 ${formatTime(l.bestTime)}` : ''}`}
+                  data-testid={`level-${l.index}`}
+                  style={{
+                    flex: 1, padding: '4px 0', borderRadius: 4, cursor: 'pointer', fontFamily: MONO, fontSize: 11,
+                    background: l.completed ? 'rgba(255,209,102,0.12)' : 'rgba(255,255,255,0.03)',
+                    color: l.completed ? '#ffd166' : cont === l.index ? '#38e8ff' : '#9fb3d9',
+                    border: `1px solid ${l.completed ? 'rgba(255,209,102,0.5)' : cont === l.index ? 'rgba(56,232,255,0.6)' : 'rgba(159,179,217,0.2)'}`,
+                  }}
+                >
+                  {String(l.index).padStart(2, '0')}{l.completed ? ' ✓' : ''}
+                </button>
+              ))}
             </div>
-            <div style={{ fontSize: 14, marginTop: 3 }}>{cnChapter(c.index)} · {c.subtitle} <span style={{ color: '#6a7aa0', fontSize: 11 }}>{c.title}</span></div>
-            <div style={{ fontSize: 11, color: '#9fb3d9', marginTop: 3 }}>{c.levelCount} 关 · {c.concept}</div>
-          </button>
+          </div>
         ))}
       </div>
+      {progress.totalDone > 0 && (
+        <button
+          onClick={() => { if (window.confirm('清空全部存档（通关记录与最佳用时）？')) onResetProgress(); }}
+          style={{ marginTop: 14, background: 'none', border: 'none', color: '#4a5a80', fontFamily: MONO, fontSize: 10, cursor: 'pointer', textDecoration: 'underline' }}
+          data-testid="reset-progress"
+        >
+          清空存档
+        </button>
+      )}
       <div style={{ marginTop: 28, color: '#4a5a80', fontSize: 11, lineHeight: 1.9, textAlign: 'center' }}>
         <div>WASD 移动 · 鼠标拖动摄像机</div>
         <div>Q / E 与 Z / C 旋转四维核心 · R 重置 · Esc 暂停</div>
@@ -61,12 +117,16 @@ export function PauseMenu({ onResume, onRestart, onMenu, muted, onToggleMute }: 
   );
 }
 
-export function LevelComplete({ title, index, last, onNext, onReplay }: { title: string; index: number; last: boolean; onNext: () => void; onReplay: () => void }) {
+export function LevelComplete({ title, index, last, progress, onNext, onReplay }: { title: string; index: number; last: boolean; progress: GameSnapshot['progress']; onNext: () => void; onReplay: () => void }) {
   return (
     <Overlay dim={0.45}>
       <div style={{ fontSize: 11, letterSpacing: '0.5em', color: '#ffd166' }}>LEVEL {String(index).padStart(2, '0')} COMPLETE</div>
       <div style={{ fontSize: 32, fontWeight: 700, marginTop: 6 }}>{title}</div>
       <div style={{ marginTop: 10, color: '#9fb3d9', fontSize: 13 }}>投影重合，通路成立。</div>
+      <div style={{ marginTop: 8, fontFamily: MONO, fontSize: 12, color: '#9fb3d9' }} data-testid="level-time">
+        用时 <b style={{ color: '#fff' }}>{formatTime(progress.levelTime)}</b>
+        {progress.isNewBest ? <span style={{ color: '#ffd166' }}> · {progress.completedBefore ? '新纪录' : '首次通关'}</span> : progress.bestTime !== null ? <span> · 最佳 {formatTime(progress.bestTime)}</span> : null}
+      </div>
       <div style={{ display: 'flex', gap: 12, marginTop: 28 }}>
         <Button onClick={onNext}>{last ? '查看结算' : '下一关 (Enter)'}</Button>
         <Button onClick={onReplay} ghost>重玩 (R)</Button>
@@ -165,18 +225,22 @@ function MuteButton({ muted, onToggle }: { muted: boolean; onToggle: () => void 
 function Overlay({ children, dim }: { children: ReactNode; dim: number }) {
   return (
     <div style={{
-      position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', overflowY: 'auto',
       background: `rgba(5,7,15,${dim})`, color: '#dbe7ff', fontFamily: MONO, backdropFilter: 'blur(2px)',
     }}>
-      {children}
+      {/* 内容比视口矮时垂直居中（margin auto），比视口高时可滚动而不裁掉顶部 */}
+      <div style={{ margin: 'auto', padding: '24px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', boxSizing: 'border-box' }}>
+        {children}
+      </div>
     </div>
   );
 }
 
-function Button({ children, onClick, ghost, style }: { children: ReactNode; onClick: () => void; ghost?: boolean; style?: CSSProperties }) {
+function Button({ children, onClick, ghost, style, 'data-testid': testId }: { children: ReactNode; onClick: () => void; ghost?: boolean; style?: CSSProperties; 'data-testid'?: string }) {
   return (
     <button
       onClick={onClick}
+      data-testid={testId}
       style={{
         padding: '11px 26px', borderRadius: 6, cursor: 'pointer', fontFamily: MONO, fontSize: 14, letterSpacing: '0.12em',
         background: ghost ? 'transparent' : 'rgba(56,232,255,0.14)', color: ghost ? '#9fb3d9' : CYAN,

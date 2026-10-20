@@ -21,7 +21,7 @@
 3. [四维数学](#3-四维数学)
 4. [解谜规则](#4-解谜规则)
 5. [一周游玩流程（七章）](#5-一周游玩流程七章)
-6. [MVP 关卡设计（第一章）](#6-mvp-关卡设计第一章) · [6b. 第二章](#6b-第二章关卡设计double-rotation-双旋) · [6c. 第三章](#6c-第三章关卡设计cross-sections-截面) · [6d. 第四章](#6d-第四章关卡设计shadows-投影之辨) · [6e. 第五章](#6e-第五章关卡设计other-polytopes-异形) · [6f. 第六章](#6f-第六章关卡设计crossing-over-跨越) · [6g. 第七章](#6g-第七章关卡设计the-nexus-枢纽)
+6. [MVP 关卡设计（第一章）](#6-mvp-关卡设计第一章) · [6b. 第二章](#6b-第二章关卡设计double-rotation-双旋) · [6c. 第三章](#6c-第三章关卡设计cross-sections-截面) · [6d. 第四章](#6d-第四章关卡设计shadows-投影之辨) · [6e. 第五章](#6e-第五章关卡设计other-polytopes-异形) · [6f. 第六章](#6f-第六章关卡设计crossing-over-跨越) · [6g. 第七章](#6g-第七章关卡设计the-nexus-枢纽) · [6h. 存档](#6h-存档与进度七章之后的打磨)
 7. [架构](#7-架构)
 8. [三天开发计划（MVP）](#8-三天开发计划mvp)
 9. [验收清单](#9-验收清单)
@@ -383,6 +383,15 @@ HUD 左栏新增"截面"行：实时显示截面名称与 `v · e · f`。切片
 5. w = −1 的东小室最初从 x 5.5 开始，玩家在走廊尽头 x ≈ 5.4 按 K 会被挡在 −0.5；小室前移到 x 4.8 与走廊充分重叠。
 6. 桥的可见性在节点激活的**下一帧**刷新（会话内先算桥再算节点），测试里要多推一帧。
 
+## 6h. 存档与进度（七章之后的打磨）
+
+MVP 范围原本不含存档；七章完成后补上，仍然是"纯逻辑 + 可注入存储"的写法：
+- `src/puzzle/progress.ts`：`Progress { version: 2, levels: { [levelId]: { bestTime, count } }, lastLevel }`；`loadProgress / saveProgress / clearProgress`（存储后端 `StorageLike` 可注入，测试用内存实现）、`recordLevelComplete`（返回是否新纪录）、`continueLevel`（"继续"应进入的关：最近一关未通关则是它，否则其后第一关未通关，再找前面漏掉的；全通则回到最近一关）、`chapterDone / isChapterCompleted`（章节完成由其所有关推导）、`formatTime`。
+- 旧版只存"已通关章节"（`nexus4d.completedChapters`）：首次读取时迁移为该章所有关已通关（无用时），写入新键 `nexus4d.progress` 后旧键不再参与。
+- `GameController`：`levelTime` 只在 playing 累计；开始一关即写 `lastLevel`；`levelComplete` 时记录用时；快照带 `progress { continueLevel, totalDone, levelTime, bestTime, isNewBest, completedBefore }`，`ChapterSnapshot` 带每关的通关与最佳用时。
+- UI：主菜单"继续 · 第 N 关"+"从头开始"（全通后改为"再来一遍"）、已通关 x / 21、章节卡显示 n/3 并列出可直达的关卡序号（已通关金色 ✓，悬停显示最佳用时）、"清空存档"（confirm）；通关页显示用时与"首次通关 / 新纪录 / 最佳"；HUD 右下角显示本关计时与最佳。
+- `Overlay` 改为可滚动（内容比视口高时不再裁掉顶部，矮时仍居中）。
+
 ### 章节结构
 `src/puzzle/chapters.ts` 把 `LEVELS` 按 `chapter` 分组为 `CHAPTERS`（标题、概念、结尾文案）。章末关完成 → 章节结算 → "下一章"或回菜单；主菜单可直接选章。`?level=N` 仍可直达任意关。
 
@@ -556,5 +565,6 @@ npm run preview    # 本地预览 docs/ 产物
 - 第五章 Other Polytopes：泛型多胞体（面/胞）、16-cell 与 24-cell 生成器、截面签名按胞分组、核心按关切换、任意顶点桥、`w0Range` 形状节点，第 13–15 关。**196 个单元测试通过**（含欧拉示性数、每面恰属两胞、截面行为），第 13–15 关与第五章结算在无头浏览器中验证。
 - 第六章 Crossing Over：玩家自身 w 坐标（I / K）、按 w 层分组的可行走面、不跳层的 `slideW` 与回弹 `settleW`、同层节点/出口、切片跟随玩家、分层平台视觉与"你的 w"仪表，第 16–18 关。**216 个单元测试通过**，第 16–18 关与第六章结算在无头浏览器中验证。
 - 第七章 The Nexus（终章）：回响 / 两盏灯 / 枢纽三关（四辐条 × 四种能力、正交双旋南桥、五棱柱截面）、`Trail` 轨迹与终章结算的四维轨迹图，HUD 桥标签修正。**256 个单元测试通过**，第 19–21 关与"七天完成"结算（含轨迹图）在无头浏览器中验证。GitHub Pages 已上线。
+- 存档与进度：每关通关记录与最佳用时、"继续"、章节卡内选关、清空存档、旧存档迁移；可滚动的菜单。**264 个单元测试通过**，存档流程（通关 → 刷新 → 继续 → 直达 → 清空）在无头浏览器中验证。
 
 Node ≥ 20。`npm run dev` 默认绑定 `0.0.0.0:5173`。

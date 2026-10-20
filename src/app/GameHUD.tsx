@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import { PLANES, involvesW } from '../math';
+import { formatTime } from '../puzzle/progress';
 import type { GameSnapshot } from '../game/GameController';
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
@@ -142,7 +143,9 @@ export function GameHUD({ snap }: Props) {
           <span style={{ color: '#9fb3d9' }}>出口</span>
           <span style={{ color: snap.exitReady ? CYAN : '#4a5a80' }}>{snap.exitReady ? '已开启' : '关闭'}</span>
         </div>
-        <div style={{ marginTop: 6, fontSize: 10, color: '#4a5a80', textAlign: 'right' }}>{snap.fps} fps</div>
+        <div style={{ marginTop: 6, fontSize: 10, color: '#4a5a80', textAlign: 'right' }}>
+          {formatTime(snap.progress.levelTime)}{snap.progress.bestTime !== null ? ` · 最佳 ${formatTime(snap.progress.bestTime)}` : ''} · {snap.fps} fps
+        </div>
       </div>
 
       {/* 底部中央：提示 */}

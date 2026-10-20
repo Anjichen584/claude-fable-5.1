@@ -56,15 +56,19 @@ export default function App() {
           {snap.phase === 'menu' && (
             <MainMenu
               onStart={() => { g.unlockAudio(); g.startLevel(1); }}
+              onContinue={() => { g.unlockAudio(); g.continueGame(); }}
               onStartChapter={(i) => { g.unlockAudio(); g.startChapter(i); }}
+              onStartLevel={(i) => { g.unlockAudio(); g.startLevel(i); }}
+              onResetProgress={() => g.resetProgress()}
               chapters={snap.chapters}
+              progress={snap.progress}
               muted={snap.muted}
               onToggleMute={() => { g.unlockAudio(); g.toggleMute(); }}
             />
           )}
           {snap.phase === 'paused' && <PauseMenu onResume={() => g.resume()} onRestart={() => g.resetLevel()} onMenu={() => g.toMenu()} muted={snap.muted} onToggleMute={() => g.toggleMute()} />}
           {snap.phase === 'complete' && (
-            <LevelComplete title={snap.title} index={snap.levelIndex} last={!!snap.chapter && snap.chapter.levelInChapter >= snap.chapter.levelCount} onNext={() => g.nextLevel()} onReplay={() => g.resetLevel()} />
+            <LevelComplete title={snap.title} index={snap.levelIndex} progress={snap.progress} last={!!snap.chapter && snap.chapter.levelInChapter >= snap.chapter.levelCount} onNext={() => g.nextLevel()} onReplay={() => g.resetLevel()} />
           )}
           {snap.phase === 'won' && (
             <Victory chapter={snap.chapter} trail={snap.trail} onMenu={() => g.toMenu()} onReplay={() => g.startChapter(snap.chapter?.index ?? 1)} onNextChapter={() => g.nextChapter()} />
