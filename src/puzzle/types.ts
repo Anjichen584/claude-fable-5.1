@@ -1,4 +1,4 @@
-import type { Plane, Rotation4D, Tilt, Vec3, Vec4 } from '../math';
+import type { Plane, Rotation4D, ShapeRequirement, Tilt, Vec3, Vec4 } from '../math';
 
 /** 轴对齐包围盒（世界坐标）。可行走判定只用 x/z；y 用于渲染高度。 */
 export interface AABB {
@@ -54,7 +54,9 @@ export interface BridgeDef {
 
 export type NodeTrigger =
   | { kind: 'reach'; radius: number }
-  | { kind: 'slice'; range: [number, number]; holdSeconds?: number };
+  | { kind: 'slice'; range: [number, number]; holdSeconds?: number }
+  /** 第三章：当前切面截面的形状满足要求（顶点/边数签名）并持续 holdSeconds */
+  | { kind: 'shape'; shape: ShapeRequirement; label: string; holdSeconds?: number };
 
 /** 节点：被激活后作为其他元素的前置条件。 */
 export interface NodeDef {
@@ -75,6 +77,18 @@ export interface ChapterDef {
   /** 章末结算文案 */
   outro: string;
   levels: LevelDef[];
+}
+
+/**
+ * 闸门：没有锚点的通路，前置条件（节点/桥）全部满足时立即开启并加入可行走集合。
+ * 第三章用它把"截面形状"直接变成路。
+ */
+export interface GateDef {
+  id: string;
+  /** 生长起点（靠玩家一侧） */
+  start: Vec3;
+  walkable: AABB;
+  requires: string[];
 }
 
 export interface HintDef {
@@ -116,6 +130,7 @@ export interface LevelDef {
   };
   bridges: BridgeDef[];
   nodes: NodeDef[];
+  gates?: GateDef[];
   exit: { position: Vec3; radius: number; requires: string[] };
   slice?: { enabled: boolean; initial: number; range: [number, number] };
   hints: HintDef[];

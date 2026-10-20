@@ -35,10 +35,13 @@ describe.each(LEVELS.map((l) => [l.id, l] as const))('关卡 %s', (_id, level) =
   });
 
   it('所有 requires 引用的 id 都存在', () => {
-    const ids = new Set([...level.bridges.map((b) => b.id), ...level.nodes.map((n) => n.id)]);
+    const ids = new Set([...level.bridges.map((b) => b.id), ...level.nodes.map((n) => n.id), ...(level.gates ?? []).map((g) => g.id)]);
     for (const b of level.bridges) for (const r of b.requires ?? []) expect(ids.has(r)).toBe(true);
     for (const n of level.nodes) for (const r of n.requires ?? []) expect(ids.has(r)).toBe(true);
+    for (const g of level.gates ?? []) for (const r of g.requires) expect(ids.has(r)).toBe(true);
     for (const r of level.exit.requires) expect(ids.has(r)).toBe(true);
+    // 每关必须有通路（桥或闸门），且出口的前置最终可达
+    expect(level.bridges.length + (level.gates?.length ?? 0)).toBeGreaterThan(0);
   });
 
   describe.each(level.bridges.map((b) => [b.id, b] as const))('桥 %s', (_bid, bridge) => {
@@ -166,6 +169,15 @@ describe('章节结构', () => {
     expect(expected - 1).toBe(LEVELS.length);
     expect(nextChapter(CHAPTERS[0])).toBe(CHAPTERS[1]);
     expect(nextChapter(CHAPTERS[CHAPTERS.length - 1])).toBeUndefined();
+  });
+
+  it('第三章每关只用形状节点 + 闸门，不用锚点桥；切片默认开启', () => {
+    for (const lv of CHAPTERS[2].levels) {
+      expect(lv.bridges).toHaveLength(0);
+      expect(lv.gates?.length ?? 0).toBeGreaterThan(0);
+      expect(lv.nodes.every((n) => n.trigger.kind === 'shape')).toBe(true);
+      expect(lv.slice?.enabled).toBe(true);
+    }
   });
 
   it('第二章每关至少有一座双旋桥；等角关的 linked 平面正交且与桥的平面一致', () => {
@@ -346,5 +358,68 @@ describe('第二章 双旋 状态机', () => {
     expect(s.exitReady).toBe(true);
     const ev = s.update(frame(b.solution, L6.exit.position));
     expect(ev.some((e) => e.type === 'levelComplete')).toBe(true);
+  });
+});
+
+describe('第三章 截面 状态机', () => {
+  const L7 = LEVELS.find((l) => l.id === 'prism') as LevelDef;
+  const L9 = LEVELS.find((l) => l.id === 'scan') as LevelDef;
+  const d2r = (x: number) => (x * Math.PI) / 180;
+  const frame = (rotation: Rotation4D, sliceW0: number | null, playerPosition: Vec3 = [0, 0, 5], dt = 0.1) => ({ dt, rotation, playerPosition, sliceW0, rotatedW: true });
+  const I = math.identityRotation();
+
+  it('单个 W 平面旋转：截面始终是长方体，节点不激活；两个 W 平面 + 扫描到边缘 → 三棱柱 → 闸门开', () => {
+    const s = new PuzzleSession(L7, T);
+    for (let w0 = -1.3; w0 <= 1.3; w0 += 0.1) {
+      s.update(frame({ ...I, XW: d2r(40) }, w0));
+      expect(s.section?.vertices).toBe(8);
+      expect(math.sectionName(s.section as math.SectionSignature)).toBe('长方体');
+    }
+    expect(s.nodes[0].active).toBe(false);
+    expect(s.gates[0].open).toBe(false);
+    const two = { ...I, YW: d2r(40), ZW: d2r(30) };
+    s.update(frame(two, 0));
+    expect(math.sectionName(s.section as math.SectionSignature)).toBe('六棱柱');
+    for (let i = 0; i < 6; i++) s.update(frame(two, -1.2));
+    expect(s.nodes[0].active).toBe(true);
+    expect(s.gates[0].open).toBe(true);
+    expect(s.exitReady).toBe(true);
+    expect(s.isWalkable([0, 0, 0])).toBe(true);
+  });
+
+  it('切片关闭时 section 为 null，形状节点不累计', () => {
+    const s = new PuzzleSession(L7, T);
+    const two = { ...I, YW: d2r(40), ZW: d2r(30) };
+    for (let i = 0; i < 6; i++) s.update(frame(two, null));
+    expect(s.section).toBeNull();
+    expect(s.nodes[0].active).toBe(false);
+  });
+
+  it('Scan：顺序 三棱柱 → 四面体 → 十二顶点；乱序不激活', () => {
+    const s = new PuzzleSession(L9, T);
+    const two = { ...I, YW: d2r(40), ZW: d2r(30) };
+    const three = { ...I, XW: d2r(35), YW: d2r(40), ZW: d2r(30) };
+    // 先试四面体：prism 未激活，tetra 不可见
+    for (let i = 0; i < 6; i++) s.update(frame(three, -1.6));
+    expect(s.isActivated('tetra')).toBe(false);
+    for (let i = 0; i < 6; i++) s.update(frame(two, -1.2));
+    expect(s.isActivated('prism')).toBe(true);
+    expect(s.gates[0].open).toBe(true);
+    for (let i = 0; i < 6; i++) s.update(frame(three, -1.6));
+    expect(s.isActivated('tetra')).toBe(true);
+    for (let i = 0; i < 6; i++) s.update(frame(three, 0));
+    expect(s.isActivated('twelve')).toBe(true);
+    expect(s.gates[1].open).toBe(true);
+    expect(s.exitReady).toBe(true);
+  });
+
+  it('纯三维旋转不改变截面签名（形状只取决于 W 朝向）', () => {
+    const three = { ...I, XW: d2r(35), YW: d2r(40), ZW: d2r(30) };
+    const base = math.sectionSignature(T, math.sliceHyperplane(T, math.rotateAll(T.vertices, three), -1.6));
+    expect(base.vertices).toBe(4);
+    for (const extra of [{ XY: 0.7 }, { XZ: -1.1 }, { YZ: 2.0 }, { XY: 0.3, XZ: 0.4, YZ: -0.9 }]) {
+      const sig = math.sectionSignature(T, math.sliceHyperplane(T, math.rotateAll(T.vertices, { ...three, ...extra }), -1.6));
+      expect(sig).toEqual(base);
+    }
   });
 });

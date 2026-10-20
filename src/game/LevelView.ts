@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Vec3 } from '../math';
-import type { BridgeStatus, NodeStatus, PuzzleSession } from '../puzzle/PuzzleSession';
+import type { BridgeStatus, NodeStatus, PuzzleSession, GateStatus } from '../puzzle/PuzzleSession';
 import { aabbCenter, aabbSize, type BridgeEvaluation } from '../puzzle/PuzzleRules';
 import type { AABB, LevelDef } from '../puzzle/types';
 import { glowTex } from './PlayerController';
@@ -30,6 +30,16 @@ interface BridgeVisual {
   lockT: number; // 锁定动画进度 0..1
 }
 
+interface GateVisual {
+  id: string;
+  deck: THREE.Mesh;
+  deckMat: THREE.MeshBasicMaterial;
+  ghost: THREE.LineSegments;
+  startZ: number;
+  box: AABB;
+  openT: number;
+}
+
 interface NodeVisual {
   id: string;
   gem: THREE.Mesh;
@@ -48,13 +58,54 @@ export class LevelView {
   private readonly disposables: Array<{ dispose(): void }> = [];
   private readonly bridges = new Map<string, BridgeVisual>();
   private readonly nodes = new Map<string, NodeVisual>();
+  private readonly gates = new Map<string, GateVisual>();
   private portal!: { ring: THREE.Mesh; ringMat: THREE.MeshBasicMaterial; disc: THREE.Mesh; discMat: THREE.MeshBasicMaterial; glow: THREE.Sprite; group: THREE.Group };
 
   constructor(level: LevelDef) {
     for (const p of level.platforms) this.addPlatform(p);
     for (const b of level.bridges) this.addBridge(b.id, b.walkable, b.vertex2 !== undefined ? 2 : 1);
     for (const n of level.nodes) this.addNode(n.id, n.position);
+    for (const g of level.gates ?? []) this.addGate(g.id, g.walkable, g.start);
     this.addPortal(level.exit.position);
+  }
+
+  // ---------------------------------------------------------------- 闸门（无插座的桥，金色）
+  private addGate(id: string, box: AABB, start: Vec3): void {
+    const size = aabbSize(box);
+    const center = aabbCenter(box);
+    const deckGeom = new THREE.BoxGeometry(size[0], 0.08, size[2]);
+    const deckMat = new THREE.MeshBasicMaterial({ color: C_GOLD, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+    const deck = new THREE.Mesh(deckGeom, deckMat);
+    deck.position.set(center[0], box.max[1] - 0.04, center[2]);
+    deck.visible = false;
+    this.group.add(deck);
+    const ghostGeom = new THREE.EdgesGeometry(new THREE.BoxGeometry(size[0], 0.02, size[2]));
+    const ghost = new THREE.LineSegments(ghostGeom, new THREE.LineDashedMaterial({ color: C_GOLD, transparent: true, opacity: 0.22, dashSize: 0.25, gapSize: 0.18 }));
+    ghost.computeLineDistances();
+    ghost.position.set(center[0], box.max[1], center[2]);
+    this.group.add(ghost);
+    this.gates.set(id, { id, deck, deckMat, ghost, startZ: start[2], box, openT: 0 });
+    this.disposables.push(deckGeom, deckMat, ghostGeom, ghost.material as THREE.Material);
+  }
+
+  private updateGate(g: GateStatus, dt: number, time: number): void {
+    const v = this.gates.get(g.def.id);
+    if (!v) return;
+    if (!g.open) {
+      v.deck.visible = false;
+      v.ghost.visible = true;
+      (v.ghost.material as THREE.LineDashedMaterial).opacity = 0.18 + 0.08 * Math.sin(time * 2);
+      return;
+    }
+    v.openT = Math.min(1, v.openT + dt / 0.7);
+    const e = 1 - Math.pow(1 - v.openT, 3);
+    v.deck.visible = true;
+    v.ghost.visible = false;
+    v.deckMat.opacity = 0.16 + 0.08 * Math.sin(time * 4) * e;
+    v.deck.scale.z = Math.max(0.001, e);
+    const farZ = Math.abs(v.startZ - v.box.min[2]) < Math.abs(v.startZ - v.box.max[2]) ? v.box.max[2] : v.box.min[2];
+    v.deck.position.z = v.startZ + (farZ - v.startZ) * 0.5 * e;
+    if (v.openT >= 1) v.deck.position.z = (v.box.min[2] + v.box.max[2]) / 2;
   }
 
   // ---------------------------------------------------------------- 平台
@@ -180,6 +231,7 @@ export class LevelView {
   update(session: PuzzleSession, dt: number, time: number, cameraPos: THREE.Vector3, sliceW0: number | null = null): void {
     for (const b of session.bridges) this.updateBridge(b, dt, time);
     for (const n of session.nodes) this.updateNode(n, time, sliceW0);
+    for (const g of session.gates) this.updateGate(g, dt, time);
     this.updatePortal(session.exitReady, dt, time, cameraPos);
   }
 
@@ -260,7 +312,7 @@ export class LevelView {
   private updateNode(n: NodeStatus, time: number, sliceW0: number | null): void {
     const v = this.nodes.get(n.def.id);
     if (!v) return;
-    const col = n.active ? C_GOLD : n.visible ? C_PURPLE : C_DIM;
+    const col = (n.active ? C_GOLD : n.visible ? C_PURPLE : C_DIM).clone();
     // 切片节点：只在切片位置接近它所在的 w 区间时显形
     let reveal = 1;
     if (n.def.trigger.kind === 'slice' && !n.active) {
@@ -269,6 +321,12 @@ export class LevelView {
       const half = (b - a) / 2;
       const d = sliceW0 === null ? Infinity : Math.max(0, Math.abs(sliceW0 - c) - half);
       reveal = THREE.MathUtils.clamp(1 - d / 0.5, 0, 1);
+    }
+    if (n.def.trigger.kind === 'shape' && !n.active && n.visible) {
+      // 形状节点：匹配中（hold 累积）时用金色脉冲预告
+      const hs = n.def.trigger.holdSeconds ?? 0.5;
+      const t = THREE.MathUtils.clamp(n.hold / hs, 0, 1);
+      if (t > 0) col.copy(C_PURPLE).lerp(C_GOLD, t);
     }
     v.gem.visible = reveal > 0.02 || n.active;
     v.gemMat.emissive.copy(col);

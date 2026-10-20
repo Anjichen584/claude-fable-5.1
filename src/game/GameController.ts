@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createTesseract, W_PLANES, type Plane, type Polytope4, type Rotation4D } from '../math';
+import { createTesseract, W_PLANES, type Plane, type Polytope4, type Rotation4D, sectionName } from '../math';
 import { LEVELS } from '../puzzle/levels';
 import { CHAPTERS, chapterOf, isLastInChapter, nextChapter } from '../puzzle/chapters';
 import type { ChapterDef } from '../puzzle/types';
@@ -66,7 +66,11 @@ export interface GameSnapshot {
   activePlane: Plane;
   lockedPlanes: Plane[];
   bridges: BridgeSnapshot[];
-  nodes: Array<{ id: string; visible: boolean; active: boolean }>;
+  nodes: Array<{ id: string; visible: boolean; active: boolean; label: string | null; hold: number; holdSeconds: number }>;
+  /** 闸门：形状节点满足后成路 */
+  gates: Array<{ id: string; open: boolean }>;
+  /** 当前切片截面签名（切片开启时） */
+  section: { name: string | null; vertices: number; edges: number; faces: number } | null;
   exitReady: boolean;
   hint: string | null;
   slice: { enabled: boolean; w0: number } | null;
@@ -356,7 +360,7 @@ export class GameController {
           this.audio.playPortal();
           break;
         case 'activated': {
-          if (e.kind === 'bridge') this.audio.playLock();
+          if (e.kind === 'bridge' || e.kind === 'gate') this.audio.playLock();
           else this.audio.playNode();
           // 新出现的桥 → 自动把自由平面切到它需要的平面，HUD 随之高亮
           const next = this.session?.bridges.find((b) => !b.locked && b.def.requires?.includes(e.id));
@@ -410,7 +414,18 @@ export class GameController {
       activePlane: this.viewState.activePlane,
       lockedPlanes: s ? s.bridges.filter((b) => b.locked).flatMap((b) => (b.def.plane2 ? [b.def.plane, b.def.plane2] : [b.def.plane])) : [],
       bridges: s ? s.bridges.map(toBridgeSnapshot) : [],
-      nodes: s ? s.nodes.map((n) => ({ id: n.def.id, visible: n.visible, active: n.active })) : [],
+      nodes: s
+        ? s.nodes.map((n) => ({
+            id: n.def.id,
+            visible: n.visible,
+            active: n.active,
+            label: n.def.trigger.kind === 'shape' ? n.def.trigger.label : null,
+            hold: n.hold,
+            holdSeconds: n.def.trigger.kind === 'shape' ? n.def.trigger.holdSeconds ?? 0.5 : 0,
+          }))
+        : [],
+      gates: s ? s.gates.map((g) => ({ id: g.def.id, open: g.open })) : [],
+      section: s?.section ? { name: sectionName(s.section), vertices: s.section.vertices, edges: s.section.edges, faces: s.section.faces } : null,
       exitReady: s?.exitReady ?? false,
       hint: this.hint,
       slice: l?.slice ? { ...this.viewState.slice } : null,

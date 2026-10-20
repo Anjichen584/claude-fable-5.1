@@ -1,6 +1,6 @@
-import { distance3, involvesW, type Plane, type Polytope4, type Rotation4D, type Vec3 } from '../math';
+import { distance3, involvesW, matchesShape, rotateAll, sectionSignature, sliceHyperplane, type Plane, type Polytope4, type Rotation4D, type SectionSignature, type Vec3 } from '../math';
 import { bridgePlanes, combineDualEvaluation, evaluateBridge, pointInAnyAABBxz, resolveAnchor, resolveAnchor2, toleranceOf, vertexWorldPosition, type BridgeEvaluation } from './PuzzleRules';
-import type { AABB, BridgeDef, LevelDef, NodeDef } from './types';
+import type { AABB, BridgeDef, GateDef, LevelDef, NodeDef } from './types';
 
 export interface BridgeStatus {
   def: BridgeDef;
@@ -21,8 +21,13 @@ export interface NodeStatus {
   hold: number;
 }
 
+export interface GateStatus {
+  def: GateDef;
+  open: boolean;
+}
+
 export type PuzzleEvent =
-  | { type: 'activated'; id: string; kind: 'bridge' | 'node' }
+  | { type: 'activated'; id: string; kind: 'bridge' | 'node' | 'gate' }
   | { type: 'exitReady' }
   | { type: 'hint'; id: string; text: string }
   | { type: 'levelComplete' };
@@ -44,8 +49,11 @@ export class PuzzleSession {
   readonly level: LevelDef;
   readonly bridges: BridgeStatus[];
   readonly nodes: NodeStatus[];
+  readonly gates: GateStatus[];
   exitReady = false;
   completed = false;
+  /** 当前切面截面的签名（切片关闭时为 null）；每帧更新，供形状节点与 HUD 使用 */
+  section: SectionSignature | null = null;
 
   private readonly poly: Polytope4;
   private readonly activated = new Set<string>();
@@ -59,6 +67,7 @@ export class PuzzleSession {
     this.poly = poly;
     this.bridges = level.bridges.map((def) => ({ def, visible: false, evaluation: null, hold: 0, progress: 0, locked: false }));
     this.nodes = level.nodes.map((def) => ({ def, visible: false, active: false, hold: 0 }));
+    this.gates = (level.gates ?? []).map((def) => ({ def, open: false }));
     this.fireHints('start');
   }
 
@@ -71,10 +80,11 @@ export class PuzzleSession {
     return this.activated.has(id);
   }
 
-  /** 当前可行走区域 = 静态平台 ∪ 已锁定的桥。 */
+  /** 当前可行走区域 = 静态平台 ∪ 已锁定的桥 ∪ 已开启的闸门。 */
   walkable(): AABB[] {
     const out: AABB[] = [...this.level.platforms];
     for (const b of this.bridges) if (b.locked) out.push(b.def.walkable);
+    for (const g of this.gates) if (g.open) out.push(g.def.walkable);
     return out;
   }
 
@@ -128,6 +138,14 @@ export class PuzzleSession {
       b.progress = Math.min(1, b.hold / tol.holdSeconds);
     }
 
+    // 截面签名（切片开启时）
+    if (input.sliceW0 !== null) {
+      const slice = sliceHyperplane(this.poly, rotateAll(this.poly.vertices, input.rotation), input.sliceW0);
+      this.section = sectionSignature(this.poly, slice);
+    } else {
+      this.section = null;
+    }
+
     // 节点
     for (const n of this.nodes) {
       if (n.active) continue;
@@ -151,6 +169,26 @@ export class PuzzleSession {
         } else {
           n.hold = 0;
         }
+      } else if (trig.kind === 'shape') {
+        const ok = this.section !== null && matchesShape(this.section, trig.shape);
+        if (ok) {
+          n.hold += input.dt;
+          if (n.hold >= (trig.holdSeconds ?? 0.5)) {
+            n.active = true;
+            this.activate(n.def.id, 'node');
+          }
+        } else {
+          n.hold = 0;
+        }
+      }
+    }
+
+    // 闸门：前置满足即开启
+    for (const g of this.gates) {
+      if (g.open) continue;
+      if (this.requirementsMet(g.def.requires)) {
+        g.open = true;
+        this.activate(g.def.id, 'gate');
       }
     }
 
@@ -191,7 +229,7 @@ export class PuzzleSession {
     return out;
   }
 
-  private activate(id: string, kind: 'bridge' | 'node'): void {
+  private activate(id: string, kind: 'bridge' | 'node' | 'gate'): void {
     if (this.activated.has(id)) return;
     this.activated.add(id);
     this.pendingEvents.push({ type: 'activated', id, kind });

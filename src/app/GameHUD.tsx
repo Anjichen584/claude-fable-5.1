@@ -55,6 +55,14 @@ export function GameHUD({ snap }: Props) {
             <span style={{ color: '#fff' }}>{snap.slice.enabled ? snap.slice.w0.toFixed(2) : '关闭'}</span>
           </div>
         )}
+        {snap.slice && snap.slice.enabled && (
+          <div style={{ marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: GOLD }}>截面</span>
+            <span style={{ color: '#fff' }}>
+              {!snap.section ? '——' : snap.section.vertices === 0 ? '空（切片在核心之外）' : `${snap.section.name ?? '多面体'} ${snap.section.vertices}v · ${snap.section.edges}e · ${snap.section.faces}f`}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* 右上：共振状态 */}
@@ -66,10 +74,27 @@ export function GameHUD({ snap }: Props) {
         {snap.nodes.length > 0 && (
           <>
             <div style={{ ...subhead, marginTop: 8 }}>节点</div>
-            {snap.nodes.map((n) => (
-              <div key={n.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
-                <span style={{ color: n.active ? GOLD : n.visible ? PURPLE : '#4a5a80' }}>{n.id}</span>
-                <span style={{ color: n.active ? GOLD : '#6a7aa0' }}>{n.active ? '已激活' : n.visible ? '待激活' : '——'}</span>
+            {snap.nodes.map((n) => {
+              const holding = !n.active && n.visible && n.holdSeconds > 0 && n.hold > 0;
+              const pct = holding ? Math.min(100, Math.round((n.hold / n.holdSeconds) * 100)) : 0;
+              return (
+                <div key={n.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                  <span style={{ color: n.active ? GOLD : n.visible ? PURPLE : '#4a5a80' }}>{n.label ?? n.id}</span>
+                  <span style={{ color: n.active ? GOLD : holding ? CYAN : '#6a7aa0' }}>
+                    {n.active ? '已激活' : holding ? `保持 ${pct}%` : n.visible ? '待激活' : '——'}
+                  </span>
+                </div>
+              );
+            })}
+          </>
+        )}
+        {snap.gates.length > 0 && (
+          <>
+            <div style={{ ...subhead, marginTop: 8 }}>闸门</div>
+            {snap.gates.map((g) => (
+              <div key={g.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                <span style={{ color: g.open ? GOLD : '#4a5a80' }}>{g.id}</span>
+                <span style={{ color: g.open ? GOLD : '#6a7aa0' }}>{g.open ? '已开启' : '关闭'}</span>
               </div>
             ))}
           </>
@@ -103,6 +128,7 @@ export function GameHUD({ snap }: Props) {
         <Key k="鼠标拖动" v="摄像机" />
         <Key k="Q / E" v="XW" gold />
         <Key k="Z / C" v="YW" gold />
+        {snap.slice && <Key k="6 + [ ]" v="ZW" gold />}
         <Key k="1–6 + [ ]" v="自由平面" />
         {snap.linked && <Key k="⇧ + [ ]" v="等角双旋" gold />}
         {snap.slice && <Key k=", / ." v="切片" gold />}

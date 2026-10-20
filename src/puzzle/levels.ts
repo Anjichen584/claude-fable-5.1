@@ -315,7 +315,129 @@ export const LEVEL_6: LevelDef = {
   ],
 };
 
-export const LEVELS: readonly LevelDef[] = [LEVEL_1, LEVEL_2, LEVEL_3, LEVEL_4, LEVEL_5, LEVEL_6];
+// ===========================================================================
+// 第三章 Cross-Sections 截面
+// 概念：同一个超立方体，截面可以是立方体、棱柱、四面体……取决于"什么朝着 W 方向"：
+//   0 个 W 平面旋转 → 顶端是一个胞 → 截面是立方体
+//   1 个             → 顶端是一个面 → 永远是长方体（只变比例）
+//   2 个             → 顶端是一条边 → 三棱柱 / 五棱柱 / 六棱柱
+//   3 个             → 顶端是一个顶点 → 四面体 / 截角四面体 / （正中）八面体
+// 机制：形状节点（截面签名匹配并保持 0.5 s）+ 闸门（节点满足即成路）。没有锚点。
+// ===========================================================================
+
+const PRISM = { vertices: 6, edges: 9 };
+const TETRA = { vertices: 4, edges: 6 };
+const TWELVE = { vertices: 12, edges: 18 };
+
+// ---------------------------------------------------------------------------
+// Level 07 — Prism：两个 W 平面
+// ---------------------------------------------------------------------------
+export const LEVEL_7: LevelDef = {
+  id: 'prism',
+  index: 7,
+  chapter: 3,
+  title: 'Prism',
+  subtitle: '棱柱',
+  platforms: [
+    { min: [-2, -T, 2.5], max: [2, 0, 7] },
+    { min: [-2, -T, -7], max: [2, 0, -2.5] },
+  ],
+  playerStart: [0, 0, 5],
+  core: {
+    position: [0, 2.6, 0],
+    scale: 1.2,
+    initialRotation: rot({}),
+    tilt: { pitch: 0.25, yaw: 0.6 },
+    allowedPlanes: ['XY', 'XZ', 'YZ', 'XW', 'YW', 'ZW'],
+  },
+  bridges: [],
+  nodes: [{ id: 'prism', position: [0, 0, 0], trigger: { kind: 'shape', shape: PRISM, label: '三棱柱 6v · 9e', holdSeconds: 0.5 } }],
+  gates: [{ id: 'gate-1', start: [0, 0, 2.5], walkable: { min: [-0.7, -T, -2.6], max: [0.7, 0, 2.6] }, requires: ['prism'] }],
+  exit: { position: [0, 0, -5.5], radius: 0.9, requires: ['gate-1'] },
+  slice: { enabled: true, initial: 0, range: [-2.2, 2.2] },
+  hints: [
+    { id: 'h-start', when: 'start', text: '这一关没有锚点。金色的是核心在 w₀ 处的截面——现在是一个正立方体（HUD 记作长方体）。闸门只认形状：把截面变成三棱柱。' },
+    { id: 'h-w', when: 'noW:8', text: '只转一个 W 平面，截面永远是长方体，只会变胖变瘦。试试同时转两个：YW（Z / C）和 ZW（6 + [ ]），再用 , . 扫描 w₀。' },
+    { id: 'h-done', when: 'activated:prism', text: '三棱柱：此时朝着 W 方向的最前端是一条棱。闸门开启。' },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Level 08 — Vertex First：三个 W 平面
+// ---------------------------------------------------------------------------
+export const LEVEL_8: LevelDef = {
+  id: 'vertexfirst',
+  index: 8,
+  chapter: 3,
+  title: 'Vertex First',
+  subtitle: '顶点朝前',
+  platforms: [
+    { min: [-2, -T, 2.5], max: [2, 0, 7] },
+    { min: [-2, -T, -7], max: [2, 0, -2.5] },
+  ],
+  playerStart: [0, 0, 5],
+  core: {
+    position: [0, 2.6, 0],
+    scale: 1.2,
+    initialRotation: rot({}),
+    tilt: { pitch: 0.2, yaw: -0.5 },
+    allowedPlanes: ['XY', 'XZ', 'YZ', 'XW', 'YW', 'ZW'],
+  },
+  bridges: [],
+  nodes: [{ id: 'tetra', position: [0, 0, 0], trigger: { kind: 'shape', shape: TETRA, label: '四面体 4v · 6e', holdSeconds: 0.5 } }],
+  gates: [{ id: 'gate-1', start: [0, 0, 2.5], walkable: { min: [-0.7, -T, -2.6], max: [0.7, 0, 2.6] }, requires: ['tetra'] }],
+  exit: { position: [0, 0, -5.5], radius: 0.9, requires: ['gate-1'] },
+  slice: { enabled: true, initial: 0, range: [-2.2, 2.2] },
+  hints: [
+    { id: 'h-start', when: 'start', text: '闸门要求四面体。三棱柱的最前端是一条棱；四面体的最前端是一个顶点——三个 W 平面都要转。' },
+    { id: 'h-w', when: 'noW:8', text: 'XW（Q / E）、YW（Z / C）、ZW（6 + [ ]）各转一点，然后把 w₀ 推到最边缘：四面体只在顶点附近出现。' },
+    { id: 'h-done', when: 'activated:tetra', text: '顶点附近的截面是四面体，正如立方体顶角附近的截面是三角形。' },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Level 09 — Scan：棱柱 → 四面体 → 十二顶点截面（章末综合）
+// ---------------------------------------------------------------------------
+export const LEVEL_9: LevelDef = {
+  id: 'scan',
+  index: 9,
+  chapter: 3,
+  title: 'Scan',
+  subtitle: '扫描',
+  platforms: [
+    { min: [-2, -T, 4], max: [2, 0, 8] },
+    { min: [-2.5, -T, -1.5], max: [2.5, 0, 1.5] },
+    { min: [-2, -T, -8], max: [2, 0, -4] },
+  ],
+  playerStart: [0, 0, 6],
+  core: {
+    position: [0, 3.1, 0],
+    scale: 1.2,
+    initialRotation: rot({}),
+    tilt: { pitch: 0.3, yaw: 0.4 },
+    allowedPlanes: ['XY', 'XZ', 'YZ', 'XW', 'YW', 'ZW'],
+  },
+  bridges: [],
+  nodes: [
+    { id: 'prism', position: [0, 0, 2.7], trigger: { kind: 'shape', shape: PRISM, label: '三棱柱 6v · 9e', holdSeconds: 0.5 } },
+    { id: 'tetra', position: [0, 0, 0], trigger: { kind: 'shape', shape: TETRA, label: '四面体 4v · 6e', holdSeconds: 0.5 }, requires: ['prism'] },
+    { id: 'twelve', position: [0, 0, -2.7], trigger: { kind: 'shape', shape: TWELVE, label: '十二顶点 12v · 18e', holdSeconds: 0.5 }, requires: ['tetra'] },
+  ],
+  gates: [
+    { id: 'gate-a', start: [0, 0, 4], walkable: { min: [-0.7, -T, 1.4], max: [0.7, 0, 4.1] }, requires: ['prism'] },
+    { id: 'gate-b', start: [0, 0, -1.5], walkable: { min: [-0.7, -T, -4.1], max: [0.7, 0, -1.4] }, requires: ['twelve'] },
+  ],
+  exit: { position: [0, 0, -6.5], radius: 0.9, requires: ['gate-b'] },
+  slice: { enabled: true, initial: 0, range: [-2.2, 2.2] },
+  hints: [
+    { id: 'h-start', when: 'start', text: '章末综合：三个形状，按顺序。先是三棱柱（两个 W 平面）。' },
+    { id: 'h-prism', when: 'activated:prism', text: '第一道闸门开了。接着是四面体：加上第三个 W 平面，w₀ 推到边缘。' },
+    { id: 'h-tetra', when: 'activated:tetra', text: '最后：保持三个旋转，把 w₀ 从顶点扫向正中。截面会经过三棱柱、长方体、五棱柱，最后变成十二个顶点的形状。' },
+    { id: 'h-twelve', when: 'activated:twelve', text: '你刚刚用一个三维切片"扫描"了一个四维物体。第二道闸门开启。' },
+  ],
+};
+
+export const LEVELS: readonly LevelDef[] = [LEVEL_1, LEVEL_2, LEVEL_3, LEVEL_4, LEVEL_5, LEVEL_6, LEVEL_7, LEVEL_8, LEVEL_9];
 
 export function levelByIndex(index: number): LevelDef | undefined {
   return LEVELS.find((l) => l.index === index);

@@ -21,6 +21,15 @@ export const CHAPTERS: readonly ChapterDef[] = [
     outro: '双手、等角、配重。三维里每个旋转都有一根不动的轴；四维里可以两个平面一起转，只有原点不动。你已经用过了它。',
     levels: LEVELS.filter((l) => l.chapter === 2),
   },
+  {
+    index: 3,
+    id: 'sections',
+    title: 'Cross-Sections',
+    subtitle: '截面',
+    concept: '同一个超立方体，不同的朝向给出不同形状的截面',
+    outro: '立方体、长方体、三棱柱、四面体。你没有换物体，只是换了它朝向 W 的那一端：一个胞、一个面、一条棱、一个顶点。用三维切片扫描四维，这就是方法。',
+    levels: LEVELS.filter((l) => l.chapter === 3),
+  },
 ];
 
 export function chapterOf(level: LevelDef): ChapterDef {

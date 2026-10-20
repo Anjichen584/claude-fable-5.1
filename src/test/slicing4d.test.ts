@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createTesseract } from '../math/hypercube';
 import { identityRotation, rotateAll } from '../math/rotation4d';
-import { countDistinctPoints, edgeHyperplaneT, sliceHyperplane } from '../math/slicing4d';
+import { countDistinctPoints, edgeHyperplaneT, matchesShape, sectionName, sectionSignature, sliceHyperplane } from '../math/slicing4d';
 
 const T = createTesseract();
 
@@ -91,5 +91,49 @@ describe('sliceHyperplane（旋转后的 tesseract）', () => {
       const s = sliceHyperplane(T, rv, w0);
       for (const p of s.points) expect(p[3]).toBe(w0);
     }
+  });
+});
+
+describe('截面签名 sectionSignature / sectionName', () => {
+  const T = createTesseract();
+  const sig = (rot: Partial<ReturnType<typeof identityRotation>>, w0: number) =>
+    sectionSignature(T, sliceHyperplane(T, rotateAll(T.vertices, { ...identityRotation(), ...rot }), w0));
+  const d2r = (x: number) => (x * Math.PI) / 180;
+
+  it('0 个 W 旋转：立方体 8v12e6f，全是四边形', () => {
+    const s = sig({}, 0);
+    expect([s.vertices, s.edges, s.faces]).toEqual([8, 12, 6]);
+    expect(s.faceSizes).toEqual([4, 4, 4, 4, 4, 4]);
+    expect(sectionName(s)).toBe('长方体');
+  });
+
+  it('1 个 W 旋转：任意角度、任意 w₀（核心内，|w₀| ≤ cos a）都是长方体', () => {
+    for (const a of [10, 35, 60, 80]) for (let w0 = -0.9; w0 <= 0.9; w0 += 0.3) {
+      expect(sectionName(sig({ ZW: d2r(a) }, w0))).toBe('长方体');
+    }
+  });
+
+  it('2 个 W 旋转：边缘三棱柱，中段六棱柱', () => {
+    expect(sectionName(sig({ YW: d2r(40), ZW: d2r(30) }, 1.2))).toBe('三棱柱');
+    expect(sectionName(sig({ YW: d2r(40), ZW: d2r(30) }, 0))).toBe('六棱柱');
+  });
+
+  it('3 个 W 旋转：顶点附近四面体；精确顶点朝前姿态的正中是正八面体 6v12e8f', () => {
+    const t = sig({ XW: d2r(35), YW: d2r(40), ZW: d2r(30) }, -1.6);
+    expect(sectionName(t)).toBe('四面体');
+    expect(t.faceSizes).toEqual([3, 3, 3, 3]);
+    const o = sig({ XW: Math.PI / 4, YW: Math.atan(1 / Math.SQRT2), ZW: Math.PI / 6 }, 0);
+    expect([o.vertices, o.edges, o.faces]).toEqual([6, 12, 8]);
+    expect(sectionName(o)).toBe('八面体');
+  });
+
+  it('空截面 0v；matchesShape 按顶点/边数匹配', () => {
+    const e = sig({}, 1.5);
+    expect(e.vertices).toBe(0);
+    expect(sectionName(e)).toBeNull();
+    const p = sig({ YW: d2r(40), ZW: d2r(30) }, 1.2);
+    expect(matchesShape(p, { vertices: 6, edges: 9 })).toBe(true);
+    expect(matchesShape(p, { vertices: 4 })).toBe(false);
+    expect(matchesShape(p, { minVertices: 6 })).toBe(true);
   });
 });

@@ -88,7 +88,7 @@ export function Victory({ chapter, onMenu, onReplay, onNextChapter }: { chapter:
         <Button onClick={onReplay} ghost={!!chapter?.hasNext}>{chapter?.hasNext ? '重玩本章' : '从头再玩'}</Button>
         <Button onClick={onMenu} ghost>主菜单</Button>
       </div>
-      {!chapter?.hasNext && <div style={{ marginTop: 18, fontSize: 11, color: '#4a5a80' }}>后续章节（截面、投影之辨、异形、跨越、枢纽）开发中。</div>}
+      {!chapter?.hasNext && <div style={{ marginTop: 18, fontSize: 11, color: '#4a5a80' }}>后续章节（投影之辨、异形、跨越、枢纽）开发中。</div>}
     </Overlay>
   );
 }

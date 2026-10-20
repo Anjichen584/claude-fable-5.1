@@ -89,3 +89,130 @@ export function countDistinctPoints(points: readonly Vec4[], tol = 1e-6): number
   }
   return kept.length;
 }
+
+// ---------------------------------------------------------------------------
+// 截面形状识别（第三章）
+// ---------------------------------------------------------------------------
+
+/** 截面多面体的组合签名：顶点数、边数、面数与各面边数（升序）。 */
+export interface SectionSignature {
+  vertices: number;
+  edges: number;
+  faces: number;
+  /** 每个面的边数，升序；如三棱柱 [3,3,4,4,4] */
+  faceSizes: number[];
+}
+
+/**
+ * 从截面线框得到组合签名。
+ * - 顶点：去重后的交点。
+ * - 边：去重后的非退化线段。
+ * - 面：每个三维胞（cell）被超平面切出一个多边形；胞 = 某一坐标固定为 ±1 的全部顶点。
+ */
+export function sectionSignature(poly: Polytope4, slice: Slice4, tol = 1e-6): SectionSignature {
+  // 顶点去重 → 映射
+  const kept: Vec4[] = [];
+  const remap: number[] = [];
+  for (const p of slice.points) {
+    let found = -1;
+    for (let i = 0; i < kept.length; i++) {
+      const q = kept[i];
+      if (Math.abs(p[0] - q[0]) < tol && Math.abs(p[1] - q[1]) < tol && Math.abs(p[2] - q[2]) < tol) {
+        found = i;
+        break;
+      }
+    }
+    if (found < 0) {
+      found = kept.length;
+      kept.push(p);
+    }
+    remap.push(found);
+  }
+  const edgeKeys = new Set<string>();
+  for (const [a, b] of slice.segments) {
+    const i = remap[a];
+    const j = remap[b];
+    if (i === j) continue;
+    edgeKeys.add(i < j ? `${i}-${j}` : `${j}-${i}`);
+  }
+
+  // 面：按胞分组。胞由 (轴 k, 符号 s) 标识；一个正方形面属于某胞当其 4 个顶点在轴 k 上都等于 s。
+  const faceSizes: number[] = [];
+  const dims = poly.vertices[0]?.length ?? 4;
+  for (let k = 0; k < dims; k++) {
+    for (const s of [-1, 1]) {
+      const sides = new Set<string>();
+      poly.faces.forEach((face, fi) => {
+        if (!face.every((vi) => Math.abs(poly.vertices[vi][k] - s) < 1e-9)) return;
+        const seg = slice.segments[faceSegmentIndex(slice, poly, fi)];
+        if (!seg) return;
+        const i = remap[seg[0]];
+        const j = remap[seg[1]];
+        if (i === j) return;
+        sides.add(i < j ? `${i}-${j}` : `${j}-${i}`);
+      });
+      if (sides.size >= 3) faceSizes.push(sides.size);
+    }
+  }
+  faceSizes.sort((a, b) => a - b);
+  return { vertices: kept.length, edges: edgeKeys.size, faces: faceSizes.length, faceSizes };
+}
+
+/**
+ * sliceHyperplane 的 segments 按 poly.faces 顺序生成，但只为有两个交点的面生成；
+ * 这里重新对应"面下标 → 线段下标"。为保持 Slice4 结构不变，用一次线性扫描重建映射并缓存。
+ */
+const faceSegCache = new WeakMap<Slice4, Int32Array>();
+function faceSegmentIndex(slice: Slice4, poly: Polytope4, faceIndex: number): number {
+  let map = faceSegCache.get(slice);
+  if (!map) {
+    map = new Int32Array(poly.faces.length).fill(-1);
+    // 重放 sliceHyperplane 的面遍历逻辑，确定哪些面产生了线段
+    const edgeIndexByKey = new Map<number, number>();
+    poly.edges.forEach(([i, j], ei) => edgeIndexByKey.set(i < j ? i * 1024 + j : j * 1024 + i, ei));
+    let si = 0;
+    poly.faces.forEach((face, fi) => {
+      const hits: number[] = [];
+      for (let k = 0; k < 4; k++) {
+        const i = face[k];
+        const j = face[(k + 1) % 4];
+        const ei = edgeIndexByKey.get(i < j ? i * 1024 + j : j * 1024 + i);
+        if (ei === undefined) continue;
+        const pi = slice.edgePoint[ei];
+        if (pi >= 0 && !hits.includes(pi)) hits.push(pi);
+      }
+      if (hits.length === 2) map![fi] = si++;
+    });
+    faceSegCache.set(slice, map);
+  }
+  return map[faceIndex];
+}
+
+/** 已知形状的中文名；未知时返回 null。 */
+export function sectionName(sig: SectionSignature): string | null {
+  const { vertices: v, edges: e, faceSizes } = sig;
+  const fs = faceSizes.join(',');
+  if (v === 0) return null;
+  if (v === 4 && e === 6) return '四面体';
+  if (v === 6 && e === 9) return '三棱柱';
+  if (v === 8 && e === 12) return fs === '4,4,4,4,4,4' ? '长方体' : null;
+  if (v === 6 && e === 12) return '八面体';
+  if (v === 10 && e === 15) return '五棱柱';
+  // 三个 W 平面一般姿态下，中段 12v18e 的面型会在截角四面体与六棱柱之间连续变化（如 3,3,3,4,4,5,6,6）
+  if (v === 12 && e === 18) return fs === '3,3,3,3,6,6,6,6' ? '截角四面体' : fs === '4,4,4,4,4,4,6,6' ? '六棱柱' : '十二顶点体';
+  return null;
+}
+
+/** 一个形状要求是否被当前签名满足。 */
+export interface ShapeRequirement {
+  vertices?: number;
+  edges?: number;
+  /** 顶点数下限（用于"够深"的要求） */
+  minVertices?: number;
+}
+export function matchesShape(sig: SectionSignature, req: ShapeRequirement): boolean {
+  if (req.vertices !== undefined && sig.vertices !== req.vertices) return false;
+  if (req.edges !== undefined && sig.edges !== req.edges) return false;
+  if (req.minVertices !== undefined && sig.vertices < req.minVertices) return false;
+  return true;
+}
