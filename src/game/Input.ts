@@ -31,6 +31,9 @@ export class Input {
   wasPressed(code: string): boolean {
     return this.pressedThisFrame.has(code);
   }
+  anyPressed(): boolean {
+    return this.pressedThisFrame.size > 0;
+  }
   endFrame(): void {
     this.pressedThisFrame.clear();
   }

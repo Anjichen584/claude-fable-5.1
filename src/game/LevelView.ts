@@ -163,9 +163,9 @@ export class LevelView {
   }
 
   // ---------------------------------------------------------------- 每帧
-  update(session: PuzzleSession, dt: number, time: number, cameraPos: THREE.Vector3): void {
+  update(session: PuzzleSession, dt: number, time: number, cameraPos: THREE.Vector3, sliceW0: number | null = null): void {
     for (const b of session.bridges) this.updateBridge(b, dt, time);
-    for (const n of session.nodes) this.updateNode(n, time);
+    for (const n of session.nodes) this.updateNode(n, time, sliceW0);
     this.updatePortal(session.exitReady, dt, time, cameraPos);
   }
 
@@ -191,7 +191,9 @@ export class LevelView {
       (v.anchorGlow.material as THREE.SpriteMaterial).color.copy(C_GOLD);
       v.anchorRing.visible = true;
       v.anchorGlow.visible = true;
-      v.anchorRing.scale.setScalar(1 + 0.08 * Math.sin(time * 5));
+      v.anchorRing.scale.setScalar(1 + 0.08 * Math.sin(time * 5) + (1 - e) * 2.5);
+      v.anchorGlow.scale.setScalar(1.2 + (1 - e) * 4);
+      (v.anchorGlow.material as THREE.SpriteMaterial).opacity = 0.6 + (1 - e) * 0.4;
       v.targetGlow.visible = false;
       v.beamMat.opacity = Math.max(0, 0.9 - v.lockT);
       return;
@@ -227,16 +229,28 @@ export class LevelView {
     v.beamMat.color.copy(ev.satisfied ? C_CYAN : C_GOLD);
   }
 
-  private updateNode(n: NodeStatus, time: number): void {
+  private updateNode(n: NodeStatus, time: number, sliceW0: number | null): void {
     const v = this.nodes.get(n.def.id);
     if (!v) return;
     const col = n.active ? C_GOLD : n.visible ? C_PURPLE : C_DIM;
+    // 切片节点：只在切片位置接近它所在的 w 区间时显形
+    let reveal = 1;
+    if (n.def.trigger.kind === 'slice' && !n.active) {
+      const [a, b] = n.def.trigger.range;
+      const c = (a + b) / 2;
+      const half = (b - a) / 2;
+      const d = sliceW0 === null ? Infinity : Math.max(0, Math.abs(sliceW0 - c) - half);
+      reveal = THREE.MathUtils.clamp(1 - d / 0.5, 0, 1);
+    }
+    v.gem.visible = reveal > 0.02 || n.active;
     v.gemMat.emissive.copy(col);
-    v.gemMat.emissiveIntensity = n.active ? 1.4 : n.visible ? 0.6 : 0.15;
+    v.gemMat.emissiveIntensity = (n.active ? 1.4 : n.visible ? 0.6 : 0.15) * reveal;
+    v.gemMat.transparent = true;
+    v.gemMat.opacity = n.active ? 1 : 0.15 + 0.85 * reveal;
     v.ringMat.color.copy(col);
-    v.ringMat.opacity = n.active ? 0.9 : n.visible ? 0.5 : 0.2;
+    v.ringMat.opacity = (n.active ? 0.9 : n.visible ? 0.5 : 0.2) * (0.3 + 0.7 * reveal);
     (v.glow.material as THREE.SpriteMaterial).color.copy(col);
-    (v.glow.material as THREE.SpriteMaterial).opacity = n.active ? 0.8 : n.visible ? 0.4 : 0.1;
+    (v.glow.material as THREE.SpriteMaterial).opacity = (n.active ? 0.8 : n.visible ? 0.4 : 0.1) * reveal;
     v.gem.rotation.y = time * (n.active ? 2.2 : 0.7);
     v.gem.position.y = n.def.position[1] + 0.9 + Math.sin(time * 1.8) * 0.08;
     v.glow.position.copy(v.gem.position);

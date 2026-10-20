@@ -98,6 +98,7 @@ export function GameHUD({ snap }: Props) {
         {snap.slice && <Key k=", / ." v="切片" gold />}
         <Key k="R" v="重置" />
         <Key k="Esc" v="暂停" />
+        <Key k="M" v={snap.muted ? '静音中' : '静音'} />
         <Key k="`" v="调试" />
       </div>
     </>

@@ -3,6 +3,7 @@ import { createTesseract, W_PLANES, type Plane, type Polytope4, type Rotation4D 
 import { LEVELS } from '../puzzle/levels';
 import { PuzzleSession, type BridgeStatus, type PuzzleEvent } from '../puzzle/PuzzleSession';
 import type { LevelDef } from '../puzzle/types';
+import { AudioEngine } from './Audio';
 import { CoreController } from './CoreController';
 import { GameScene } from './GameScene';
 import { Input } from './Input';
@@ -41,6 +42,7 @@ export interface GameSnapshot {
   slice: { enabled: boolean; w0: number } | null;
   fps: number;
   debug: boolean;
+  muted: boolean;
 }
 
 export interface GameCallbacks {
@@ -54,6 +56,7 @@ export interface GameCallbacks {
  */
 export class GameController {
   readonly viewState: ViewState = createDefaultViewState();
+  readonly audio = new AudioEngine();
   phase: GamePhase = 'menu';
   debug = false;
 
@@ -120,6 +123,7 @@ export class GameController {
     this.viewState.slice = level.slice ? { enabled: level.slice.enabled, w0: level.slice.initial } : { enabled: false, w0: 0 };
     this.coreController.allowedPlanes = new Set(level.core.allowedPlanes);
     this.coreController.sliceRange = level.slice?.range ?? [-2.2, 2.2];
+    this.coreController.allowSliceToggle = !!level.slice;
 
     this.tesseract.group.position.set(level.core.position[0], level.core.position[1], level.core.position[2]);
     this.tesseract.group.scale.setScalar(level.core.scale);
@@ -151,6 +155,8 @@ export class GameController {
   pause(): void {
     if (this.phase === 'playing') {
       this.phase = 'paused';
+      this.audio.setResonance(0, 0);
+      this.audio.setRotating(false, false);
       this.emitSnapshot();
     }
   }
@@ -183,12 +189,16 @@ export class GameController {
   private frame(dt: number, t: number): void {
     const inp = this.input;
 
+    if (inp.anyPressed()) this.unlockAudio();
     if (inp.wasPressed('Backquote')) this.debug = !this.debug;
+    if (inp.wasPressed('KeyM')) this.toggleMute();
+    if (inp.wasPressed('KeyB')) this.scene.bloomEnabled = !this.scene.bloomEnabled;
     if (inp.wasPressed('Escape')) {
       if (this.phase === 'playing') this.pause();
       else if (this.phase === 'paused') this.resume();
     }
     if (inp.wasPressed('KeyR') && (this.phase === 'playing' || this.phase === 'paused' || this.phase === 'complete')) {
+      this.audio.playReset();
       this.resetLevel();
     }
     if (inp.wasPressed('Enter') && this.phase === 'complete') this.nextLevel();
@@ -216,6 +226,20 @@ export class GameController {
       });
       this.handleEvents(events);
 
+      // 音效：共振（取最接近的可见未锁定桥）与旋转摩擦
+      let closeness = 0;
+      let progress = 0;
+      for (const b of this.session.bridges) {
+        if (b.locked || !b.visible || !b.evaluation) continue;
+        closeness = Math.max(closeness, 1 - Math.min(1, b.evaluation.distance / 2.0));
+        progress = Math.max(progress, b.progress);
+      }
+      this.audio.setResonance(closeness, progress);
+      // 磁性吸附：距离锚点 < 0.6 时旋转减速，最低到 30%
+      this.coreController.speedScale = closeness > 0.7 ? Math.max(0.3, 1 - (closeness - 0.7) / 0.3 * 0.7) : 1;
+      const rotatedAny = (Object.keys(rotation) as Plane[]).some((p) => rotation[p] !== before[p]);
+      this.audio.setRotating(rotatedAny, rotatedW);
+
       // 摄像机跟随：目标平滑移动，摄像机保持相对偏移
       const desired = new THREE.Vector3(this.player.position[0], this.player.position[1] + 0.6, this.player.position[2]);
       const k = 1 - Math.exp(-6 * dt);
@@ -223,13 +247,15 @@ export class GameController {
       this.scene.controls.target.lerp(desired, k);
       this.scene.camera.position.add(this.scene.controls.target.clone().sub(prev));
 
-      this.levelView.update(this.session, dt, t, this.scene.camera.position);
+      this.levelView.update(this.session, dt, t, this.scene.camera.position, this.viewState.slice.enabled ? this.viewState.slice.w0 : null);
 
       if (this.hint && this.hintTimer > 0) {
         this.hintTimer -= dt;
         if (this.hintTimer <= 0) this.hint = null;
       }
     } else if (this.phase === 'menu') {
+      this.audio.setResonance(0, 0);
+      this.audio.setRotating(false, false);
       // 菜单背景：缓慢自转的超立方体
       this.viewState.rotation = { ...this.viewState.rotation, XW: this.viewState.rotation.XW + dt * 0.25, YZ: this.viewState.rotation.YZ + dt * 0.1 };
       this.tesseract.group.position.set(0, 0, 0);
@@ -237,7 +263,7 @@ export class GameController {
       this.scene.controls.target.lerp(new THREE.Vector3(0, 0, 0), 0.05);
     } else if (this.levelView && this.session) {
       // 暂停 / 完成：场景静止但仍渲染反馈
-      this.levelView.update(this.session, 0, t, this.scene.camera.position);
+      this.levelView.update(this.session, 0, t, this.scene.camera.position, this.viewState.slice.enabled ? this.viewState.slice.w0 : null);
     }
 
     this.tesseract.update(this.viewState, t);
@@ -263,9 +289,24 @@ export class GameController {
         case 'hint':
           this.hint = e.text;
           this.hintTimer = 9;
+          this.audio.playHint();
           break;
+        case 'exitReady':
+          this.audio.playPortal();
+          break;
+        case 'activated': {
+          if (e.kind === 'bridge') this.audio.playLock();
+          else this.audio.playNode();
+          // 新出现的桥 → 自动把自由平面切到它需要的平面，HUD 随之高亮
+          const next = this.session?.bridges.find((b) => !b.locked && b.def.requires?.includes(e.id));
+          if (next && this.coreController.allowedPlanes.has(next.def.plane)) this.viewState.activePlane = next.def.plane;
+          break;
+        }
         case 'levelComplete':
           this.phase = 'complete';
+          this.audio.setResonance(0, 0);
+          this.audio.setRotating(false, false);
+          this.audio.playComplete();
           break;
         default:
           break;
@@ -277,6 +318,18 @@ export class GameController {
   private emitSnapshot(): void {
     if (this.disposed) return;
     this.callbacks.onSnapshot(this.snapshot());
+  }
+
+  /** 用户手势（点击按钮 / 按键）时调用，解锁音频 */
+  unlockAudio(): void {
+    this.audio.unlock();
+    this.audio.setAmbient(true);
+  }
+
+  toggleMute(): boolean {
+    const m = this.audio.toggleMute();
+    this.emitSnapshot();
+    return m;
   }
 
   snapshot(): GameSnapshot {
@@ -298,6 +351,7 @@ export class GameController {
       slice: l?.slice ? { ...this.viewState.slice } : null,
       fps: this.fps,
       debug: this.debug,
+      muted: this.audio.muted,
     };
   }
 
@@ -307,6 +361,7 @@ export class GameController {
     this.player.dispose();
     this.tesseract.dispose();
     this.input.dispose();
+    this.audio.dispose();
     this.scene.dispose();
   }
 }

@@ -23,6 +23,8 @@ export class CoreController {
   sliceRange: readonly [number, number] = [-2.2, 2.2];
   /** 是否允许用 X 切换切片（关卡未启用切片时关闭） */
   allowSliceToggle = true;
+  /** 旋转速度倍率（0..1）。接近共振时由 GameController 调低，形成"磁性吸附"手感 */
+  speedScale = 1;
 
   constructor(state: ViewState, input: Input) {
     this.state = state;
@@ -41,9 +43,10 @@ export class CoreController {
     const axis = (codes: readonly [string, string]): number =>
       (inp.isDown(codes[1]) ? 1 : 0) - (inp.isDown(codes[0]) ? 1 : 0);
 
-    this.rotate('XW', axis(KEYMAP.XW) * ROTATE_SPEED * dt);
-    this.rotate('YW', axis(KEYMAP.YW) * ROTATE_SPEED * dt);
-    this.rotate(s.activePlane, axis(KEYMAP.active) * ROTATE_SPEED * dt);
+    const speed = ROTATE_SPEED * this.speedScale;
+    this.rotate('XW', axis(KEYMAP.XW) * speed * dt);
+    this.rotate('YW', axis(KEYMAP.YW) * speed * dt);
+    this.rotate(s.activePlane, axis(KEYMAP.active) * speed * dt);
 
     const sd = axis(KEYMAP.slice);
     if (sd !== 0 && s.slice.enabled) {

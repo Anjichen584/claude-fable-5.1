@@ -35,6 +35,9 @@ export default function App() {
     }
     gameRef.current = game;
     setSnap(game.snapshot());
+    // 开发入口：?level=N 直接进入某关
+    const lv = Number(new URLSearchParams(window.location.search).get('level'));
+    if (Number.isInteger(lv) && lv >= 1 && lv <= game.levelCount) game.startLevel(lv);
     return () => {
       game.dispose();
       gameRef.current = null;
@@ -50,8 +53,8 @@ export default function App() {
       {!error && snap && g && (
         <>
           {snap.phase !== 'menu' && snap.phase !== 'won' && <GameHUD snap={snap} />}
-          {snap.phase === 'menu' && <MainMenu onStart={() => g.startLevel(1)} />}
-          {snap.phase === 'paused' && <PauseMenu onResume={() => g.resume()} onRestart={() => g.resetLevel()} onMenu={() => g.toMenu()} />}
+          {snap.phase === 'menu' && <MainMenu onStart={() => { g.unlockAudio(); g.startLevel(1); }} muted={snap.muted} onToggleMute={() => { g.unlockAudio(); g.toggleMute(); }} />}
+          {snap.phase === 'paused' && <PauseMenu onResume={() => g.resume()} onRestart={() => g.resetLevel()} onMenu={() => g.toMenu()} muted={snap.muted} onToggleMute={() => g.toggleMute()} />}
           {snap.phase === 'complete' && (
             <LevelComplete title={snap.title} index={snap.levelIndex} last={snap.levelIndex >= snap.levelCount} onNext={() => g.nextLevel()} onReplay={() => g.resetLevel()} />
           )}

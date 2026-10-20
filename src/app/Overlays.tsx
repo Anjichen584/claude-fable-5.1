@@ -3,9 +3,10 @@ import type { CSSProperties, ReactNode } from 'react';
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 const CYAN = '#38e8ff';
 
-export function MainMenu({ onStart }: { onStart: () => void }) {
+export function MainMenu({ onStart, muted, onToggleMute }: { onStart: () => void; muted: boolean; onToggleMute: () => void }) {
   return (
     <Overlay dim={0.35}>
+      <MuteButton muted={muted} onToggle={onToggleMute} />
       <div style={{ fontSize: 11, letterSpacing: '0.5em', color: '#6fa8ff' }}>HIGHER-DIMENSIONAL PUZZLE</div>
       <div style={{ fontSize: 56, fontWeight: 800, letterSpacing: '0.18em', marginTop: 8, lineHeight: 1 }}>
         NEXUS<span style={{ color: CYAN }}>:</span> 4D
@@ -20,9 +21,10 @@ export function MainMenu({ onStart }: { onStart: () => void }) {
   );
 }
 
-export function PauseMenu({ onResume, onRestart, onMenu }: { onResume: () => void; onRestart: () => void; onMenu: () => void }) {
+export function PauseMenu({ onResume, onRestart, onMenu, muted, onToggleMute }: { onResume: () => void; onRestart: () => void; onMenu: () => void; muted: boolean; onToggleMute: () => void }) {
   return (
     <Overlay dim={0.55}>
+      <MuteButton muted={muted} onToggle={onToggleMute} />
       <div style={{ fontSize: 11, letterSpacing: '0.5em', color: '#6fa8ff' }}>PAUSED</div>
       <div style={{ fontSize: 28, fontWeight: 700, marginTop: 6 }}>已暂停</div>
       <div style={{ display: 'flex', gap: 12, marginTop: 28 }}>
@@ -51,10 +53,10 @@ export function LevelComplete({ title, index, last, onNext, onReplay }: { title:
 export function Victory({ onMenu, onReplay }: { onMenu: () => void; onReplay: () => void }) {
   return (
     <Overlay dim={0.55}>
-      <div style={{ fontSize: 11, letterSpacing: '0.5em', color: '#ffd166' }}>CHAPTER 01 COMPLETE</div>
+      <div style={{ fontSize: 11, letterSpacing: '0.5em', color: '#ffd166' }}>CHAPTER 01 · DAY 1 COMPLETE</div>
       <div style={{ fontSize: 40, fontWeight: 800, marginTop: 8, letterSpacing: '0.1em' }}>第一章 · 折叠</div>
       <div style={{ marginTop: 14, color: '#9fb3d9', fontSize: 14, maxWidth: 480, textAlign: 'center', lineHeight: 1.8 }}>
-        你已经学会让一个四维物体在三维里改变形状。<br />这只是七个切面中的第一个。
+        三座桥、一个隐藏的切面。你已经学会让一个四维物体在三维里改变形状。<br />这只是七个切面中的第一个。
       </div>
       <div style={{ display: 'flex', gap: 12, marginTop: 30 }}>
         <Button onClick={onReplay}>从头再玩</Button>
@@ -70,6 +72,22 @@ export function ErrorScreen({ message }: { message: string }) {
       <div style={{ fontSize: 20, color: '#ffd166' }}>无法启动渲染器</div>
       <div style={{ marginTop: 10, color: '#9fb3d9', maxWidth: 520, textAlign: 'center', lineHeight: 1.7 }}>{message}</div>
     </Overlay>
+  );
+}
+
+function MuteButton({ muted, onToggle }: { muted: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      title="静音 (M)"
+      style={{
+        position: 'absolute', top: 18, right: 18, padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
+        background: 'transparent', color: muted ? '#6a7aa0' : CYAN, border: '1px solid rgba(159,179,217,0.35)',
+        fontFamily: MONO, fontSize: 12, letterSpacing: '0.1em',
+      }}
+    >
+      {muted ? '♪ 静音' : '♪ 音效'}
+    </button>
   );
 }
 

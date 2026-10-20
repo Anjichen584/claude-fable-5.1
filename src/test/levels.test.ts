@@ -183,3 +183,33 @@ describe('PuzzleSession 状态机', () => {
     expect(snapped.XY).toBe(1.0);
   });
 });
+
+describe('第三关 The Slice 状态机', () => {
+  it('隐藏节点需要 bridge-a 锁定 + 切片位置进入区间并持续 300ms；随后 bridge-b 出现并可用 ZW 解开', () => {
+    const l3 = LEVELS[2];
+    const s = new PuzzleSession(l3, T);
+    const f = (rotation: Rotation4D, sliceW0: number | null, player = l3.playerStart) =>
+      s.update({ dt: 1 / 60, rotation, playerPosition: player, sliceW0, rotatedW: false });
+    // 切片在区间内但 bridge-a 未锁 → 不激活
+    for (let i = 0; i < 30; i++) f(l3.core.initialRotation, 0.4);
+    expect(s.nodes[0].active).toBe(false);
+    for (let i = 0; i < 20; i++) f(l3.bridges[0].solution, -1.9);
+    expect(s.bridges[0].locked).toBe(true);
+    // 切片在区间外 → 不激活
+    for (let i = 0; i < 30; i++) f(l3.bridges[0].solution, -1.0);
+    expect(s.nodes[0].active).toBe(false);
+    // 进入区间 10 帧（167ms）→ 还没激活；离开 → 重置
+    for (let i = 0; i < 10; i++) f(l3.bridges[0].solution, 0.4);
+    expect(s.nodes[0].active).toBe(false);
+    f(l3.bridges[0].solution, 1.0);
+    expect(s.nodes[0].hold).toBe(0);
+    for (let i = 0; i < 20; i++) f(l3.bridges[0].solution, 0.45);
+    expect(s.nodes[0].active).toBe(true);
+    f(l3.bridges[0].solution, 0.45);
+    expect(s.bridges[1].visible).toBe(true);
+    expect(s.bridges[1].evaluation?.satisfied).toBe(false);
+    for (let i = 0; i < 20; i++) f(l3.bridges[1].solution, 0.45);
+    expect(s.bridges[1].locked).toBe(true);
+    expect(s.exitReady).toBe(true);
+  });
+});

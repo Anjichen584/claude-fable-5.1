@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
 export interface GameSceneOptions {
   container: HTMLElement;
@@ -25,12 +26,15 @@ export class GameScene {
   private disposed = false;
   private readonly resizeObserver: ResizeObserver;
   private readonly starfield: THREE.Points;
+  private readonly bloom: UnrealBloomPass;
+  private _bloomEnabled = false;
+  private readonly onContextLost: (e: Event) => void;
 
   constructor(opts: GameSceneOptions) {
     this.container = opts.container;
     this.onFrame = opts.onFrame;
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance', outputBufferType: THREE.HalfFloatType });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setClearColor(new THREE.Color('#05070f'), 1);
     this.renderer.domElement.style.display = 'block';
@@ -62,6 +66,17 @@ export class GameScene {
     this.scene.add(this.starfield);
     this.scene.add(this.root);
 
+    // 轻量 bloom：使用 r182 内置后处理管线（renderer.setEffects），色彩空间由渲染器统一处理
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.5, 0.4, 0.7);
+    this.bloomEnabled = true;
+
+    this.onContextLost = (e: Event) => {
+      e.preventDefault();
+      opts.onError?.(new Error('WebGL 上下文丢失（显卡驱动或浏览器回收了 GPU 资源）。请刷新页面。'));
+      this.dispose();
+    };
+    this.renderer.domElement.addEventListener('webglcontextlost', this.onContextLost, false);
+
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(this.container);
     this.resize();
@@ -85,10 +100,25 @@ export class GameScene {
     this.rafId = requestAnimationFrame(loop);
   }
 
+  /** 发光后处理开关（B 键）。低端机可关闭。 */
+  get bloomEnabled(): boolean {
+    return this._bloomEnabled;
+  }
+  set bloomEnabled(v: boolean) {
+    this._bloomEnabled = v;
+    try {
+      this.renderer.setEffects(v ? [this.bloom] : []);
+    } catch {
+      this._bloomEnabled = false;
+    }
+  }
+
   resize(): void {
     const w = this.container.clientWidth || 1;
     const h = this.container.clientHeight || 1;
     this.renderer.setSize(w, h, false);
+    const pr = this.renderer.getPixelRatio();
+    this.bloom?.setSize(w * pr, h * pr);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
@@ -98,7 +128,10 @@ export class GameScene {
     this.disposed = true;
     cancelAnimationFrame(this.rafId);
     this.resizeObserver.disconnect();
+    this.renderer.domElement.removeEventListener('webglcontextlost', this.onContextLost);
     this.controls.dispose();
+    this.renderer.setEffects([]);
+    this.bloom.dispose();
     this.starfield.geometry.dispose();
     (this.starfield.material as THREE.Material).dispose();
     this.renderer.dispose();
@@ -134,7 +167,7 @@ function makeStarfield(): THREE.Points {
     pos[i * 3 + 1] = r * u;
     pos[i * 3 + 2] = r * s * Math.sin(th);
     const c = palette[Math.floor(Math.random() * palette.length)];
-    const b = 0.5 + Math.random() * 0.5;
+    const b = 0.18 + Math.random() * 0.4; // 保持在 bloom 阈值之下
     col[i * 3] = c.r * b;
     col[i * 3 + 1] = c.g * b;
     col[i * 3 + 2] = c.b * b;
@@ -142,6 +175,6 @@ function makeStarfield(): THREE.Points {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  const m = new THREE.PointsMaterial({ size: 0.35, vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false, fog: false });
+  const m = new THREE.PointsMaterial({ size: 0.3, vertexColors: true, transparent: true, opacity: 0.95, depthWrite: false, fog: false });
   return new THREE.Points(g, m);
 }
