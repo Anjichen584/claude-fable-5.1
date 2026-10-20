@@ -124,7 +124,7 @@ describe('第六章 沿 W 滑动（slideW，与 PlayerController 同一逻辑）
 });
 
 describe('第六章 关卡与章节', () => {
-  it('章节结构：三关、都启用 playerW、章末关切片跟随玩家；LEVELS 共 18 关', () => {
+  it('章节结构：三关、都启用 playerW、章末关切片跟随玩家；LEVELS ≥ 18 关', () => {
     const ch = CHAPTERS[5];
     expect(ch.index).toBe(6);
     expect(ch.id).toBe('crossing');
@@ -132,7 +132,7 @@ describe('第六章 关卡与章节', () => {
     for (const l of ch.levels) expect(l.playerW?.enabled).toBe(true);
     expect(LEVEL_18.playerW?.sliceFollows).toBe(true);
     expect(LEVEL_18.slice?.enabled).toBe(true);
-    expect(LEVELS.length).toBe(18);
+    expect(LEVELS.length).toBeGreaterThanOrEqual(18);
   });
 
   it('每关的分层平台：玩家起点在初始 w 层；出口所在层有地面；跨层处至少有一块重叠区域', () => {

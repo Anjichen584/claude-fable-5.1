@@ -866,7 +866,199 @@ export const LEVEL_18: LevelDef = {
   ],
 };
 
-export const LEVELS: readonly LevelDef[] = [LEVEL_1, LEVEL_2, LEVEL_3, LEVEL_4, LEVEL_5, LEVEL_6, LEVEL_7, LEVEL_8, LEVEL_9, LEVEL_10, LEVEL_11, LEVEL_12, LEVEL_13, LEVEL_14, LEVEL_15, LEVEL_16, LEVEL_17, LEVEL_18];
+// ===========================================================================
+// 第七章 The Nexus 枢纽（终章）
+// 没有新概念。前六天的每一种能力各自回响一次，然后在枢纽里同时用上。
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Level 19 — Echo：双旋桥（第二章）→ 三棱柱截面（第三章）→ w = +1 的回声室（第六章）
+// ---------------------------------------------------------------------------
+const L19_BASE = rot({});
+export const LEVEL_19: LevelDef = {
+  id: 'echo',
+  index: 19,
+  chapter: 7,
+  title: 'Echo',
+  subtitle: '回响',
+  platforms: [
+    { min: [-2, -T, 2.5], max: [2, 0, 7] },
+    { min: [-2, -T, -7], max: [2, 0, -2.5] },
+  ],
+  playerStart: [0, 0, 5],
+  core: {
+    position: [0, 2.6, 0],
+    scale: 1.2,
+    initialRotation: L19_BASE,
+    tilt: { pitch: 0.3, yaw: 0.5 },
+    allowedPlanes: ['XW', 'YZ', 'YW'],
+  },
+  bridges: [
+    {
+      id: 'bridge-1',
+      start: [0, 0, 2.5],
+      walkable: { min: [-0.7, -T, -2.6], max: [0.7, 0, 2.6] },
+      vertex: [-1, 0, 0, 1],
+      plane: 'XW',
+      vertex2: [0, 1, -1, 0],
+      plane2: 'YZ',
+      solution: { ...L19_BASE, XW: deg(-65), YZ: deg(-110) },
+    },
+  ],
+  nodes: [
+    { id: 'prism', position: [0, 0, -3.5], trigger: { kind: 'shape', shape: PRISM, label: '三棱柱 6v · 9e', holdSeconds: 0.5 }, requires: ['bridge-1'] },
+    { id: 'echo', position: [0, 0, -6], trigger: { kind: 'reach', radius: 0.9, w: 1 }, requires: ['prism'] },
+  ],
+  // 回声室：w = +1 层、只覆盖对岸平台的后半段，三棱柱出现后才成路
+  gates: [{ id: 'echo-room', start: [0, 0, -4], walkable: { min: [-2, -T, -7], max: [2, 0, -4], w: 1 }, requires: ['prism'] }],
+  exit: { position: [0, 0, -5.5], radius: 0.9, requires: ['echo'] },
+  slice: { enabled: true, initial: 0, range: [-2.2, 2.2] },
+  playerW: { enabled: true, initial: 0, range: [-1.5, 1.5] },
+  hints: [
+    { id: 'h-start', when: 'start', text: '终章没有新东西。先把第二天的双旋桥搭起来：XW 与 YZ 各有一个目标。' },
+    { id: 'h-bridge', when: 'activated:bridge-1', text: '桥锁定了 XW 与 YZ。对岸的节点要三棱柱：剩下的 YW 转一点（±20°–40°），再把切片推到边缘（|w₀| ≈ 1–1.5）。' },
+    { id: 'h-prism', when: 'activated:prism', text: '对岸后半段出现了 w = +1 的回声室。按 I 上去，碰到节点，再按 K 下来。' },
+    { id: 'h-exit', when: 'exitReady', text: '出口在 w = 0。' },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Level 20 — Two Lights：24-cell（第五章）+ 正交投影桥（第四章）+ w = −1 钥匙（第六章）
+// ---------------------------------------------------------------------------
+export const LEVEL_20: LevelDef = {
+  id: 'twolights',
+  index: 20,
+  chapter: 7,
+  title: 'Two Lights',
+  subtitle: '两盏灯',
+  platforms: [
+    { min: [-2, -T, 4], max: [2, 0, 8] },
+    { min: [-2.5, -T, -1.5], max: [2.5, 0, 1.5] },
+    { min: [-2, -T, -8], max: [2, 0, -4] },
+    // 中间平台下方 w = −1 的钥匙室
+    { min: [-1.5, -T, -1.5], max: [1.5, 0, 1.5], w: -1 },
+  ],
+  playerStart: [0, 0, 6],
+  core: {
+    position: [0, 3.1, 0],
+    scale: 1.2,
+    initialRotation: rot({}),
+    tilt: { pitch: 0.3, yaw: 0.5 },
+    allowedPlanes: ['XW', 'YZ'],
+    polytope: 'cell24',
+    projection: { initial: 'perspective', switchable: true },
+  },
+  bridges: [
+    {
+      id: 'bridge-b',
+      start: [0, 0, -1.5],
+      walkable: { min: [-0.7, -T, -4.1], max: [0.7, 0, -1.4] },
+      vertex: 8, // (1, 0, 0, 1)
+      plane: 'XW',
+      vertex2: 12, // (0, 1, 1, 0)
+      plane2: 'YZ',
+      solution: rot({ XW: deg(-105), YZ: deg(70) }),
+      anyVertex: true,
+      projection: 'orthographic',
+      requires: ['key'],
+    },
+  ],
+  nodes: [
+    { id: 'cube', position: [0, 0, 2.7], trigger: { kind: 'shape', shape: CUBE, label: '立方体 8v · 12e', holdSeconds: 0.5 } },
+    { id: 'key', position: [0, 0, 0], trigger: { kind: 'reach', radius: 0.9, w: -1 }, requires: ['cube'] },
+  ],
+  gates: [{ id: 'gate-a', start: [0, 0, 4], walkable: { min: [-0.7, -T, 1.4], max: [0.7, 0, 4.1] }, requires: ['cube'] }],
+  exit: { position: [0, 0, -6.5], radius: 0.9, requires: ['bridge-b'] },
+  slice: { enabled: true, initial: 0.3, range: [-1.5, 1.5] },
+  playerW: { enabled: true, initial: 0, range: [-1.5, 1.5] },
+  hints: [
+    { id: 'h-start', when: 'start', text: '二十四胞体。先要第五天的立方体截面（XW ≈ 45°，切片推到顶端），闸门才开。' },
+    { id: 'h-cube', when: 'activated:cube', text: '闸门开了。桥的钥匙在中间平台下方 w = −1 处。' },
+    { id: 'h-key', when: 'activated:key', text: '锚点出现了——但这座桥是用正交投影画的。按 P 换灯，再用 XW 与 YZ 把任意一个顶点送上去。' },
+    { id: 'h-done', when: 'activated:bridge-b', text: '两盏灯、三个房间、一个不认识的物体。都用过了。' },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Level 21 — The Nexus：枢纽。中央平台四条辐条，每条用一种能力；全部点亮才打开出口。
+//   北：双旋桥（第二章）       东：w 层走廊 + w = −1 节点（第六章）
+//   西：五棱柱截面闸门（第三章） 南：正交投影下的双旋桥（第四章 + 第二章）→ 出口
+// ---------------------------------------------------------------------------
+const PENTA = { vertices: 10, edges: 15 };
+const L21_BASE = rot({});
+export const LEVEL_21: LevelDef = {
+  id: 'nexus',
+  index: 21,
+  chapter: 7,
+  title: 'The Nexus',
+  subtitle: '枢纽',
+  platforms: [
+    // 中央
+    { min: [-2.5, -T, -2.5], max: [2.5, 0, 2.5] },
+    // 北 / 南 / 西 / 东 四个端点平台
+    { min: [-2, -T, -8.5], max: [2, 0, -5] },
+    { min: [-2, -T, 5], max: [2, 0, 8.5] },
+    { min: [-8.5, -T, -2], max: [-5, 0, 2] },
+    { min: [8.5 - 3.5, -T, -2], max: [8.5, 0, 2] },
+    // 东：w = +1 走廊，从中央平台东侧一直铺到东平台
+    { min: [1, -T, -1], max: [6, 0, 1], w: 1 },
+    // 东平台下方 w = −1 的小室（节点所在）
+    { min: [4.8, -T, -1.2], max: [8, 0, 1.2], w: -1 },
+  ],
+  playerStart: [0, 0, 0.5],
+  core: {
+    position: [0, 3.4, 0],
+    scale: 1.3,
+    initialRotation: L21_BASE,
+    tilt: { pitch: 0.3, yaw: 0.5 },
+    allowedPlanes: ['XW', 'YZ', 'YW', 'ZW'],
+    projection: { initial: 'perspective', switchable: true },
+  },
+  bridges: [
+    {
+      id: 'north',
+      start: [0, 0, -2.5],
+      walkable: { min: [-1, -T, -5.1], max: [1, 0, -2.4] },
+      vertex: [-1, 0, 0, 1],
+      plane: 'XW',
+      vertex2: [0, 1, -1, 0],
+      plane2: 'YZ',
+      solution: { ...L21_BASE, XW: deg(-65), YZ: deg(-110) },
+    },
+    {
+      id: 'south',
+      start: [0, 0, 2.5],
+      walkable: { min: [-1, -T, 2.4], max: [1, 0, 5.1] },
+      vertex: 8,
+      plane: 'YW',
+      vertex2: 1,
+      plane2: 'ZW',
+      solution: { ...L21_BASE, XW: deg(-65), YZ: deg(-110), YW: deg(-75), ZW: deg(-45) },
+      projection: 'orthographic',
+      requires: ['n-node', 'e-node', 'w-node'],
+    },
+  ],
+  nodes: [
+    { id: 'n-node', position: [0, 0, -7], trigger: { kind: 'reach', radius: 0.9 }, requires: ['north'] },
+    { id: 'e-node', position: [7, 0, 0], trigger: { kind: 'reach', radius: 0.9, w: -1 } },
+    { id: 'penta', position: [-3.5, 0, 0], trigger: { kind: 'shape', shape: PENTA, label: '五棱柱 10v · 15e', holdSeconds: 0.5 }, requires: ['north'] },
+    { id: 'w-node', position: [-7, 0, 0], trigger: { kind: 'reach', radius: 0.9 }, requires: ['penta'] },
+  ],
+  gates: [{ id: 'west', start: [-2.5, 0, 0], walkable: { min: [-5.1, -T, -1], max: [-2.4, 0, 1] }, requires: ['penta'] }],
+  exit: { position: [0, 0, 7], radius: 0.9, requires: ['south'] },
+  slice: { enabled: true, initial: 0, range: [-2.2, 2.2] },
+  playerW: { enabled: true, initial: 0, range: [-1.5, 1.5] },
+  hints: [
+    { id: 'h-start', when: 'start', text: '枢纽。四条辐条，四种能力。北：双旋桥。东：沿 W 的走廊。西：截面闸门。南：出口。顺序不限——但有些路会互相解锁。' },
+    { id: 'h-north', when: 'activated:north', text: '北桥锁定了 XW 与 YZ。西边的闸门现在可解：剩下的 YW 转 ±20°–30°，切片留在中间（|w₀| ≤ 0.6），找到五棱柱。' },
+    { id: 'h-penta', when: 'activated:penta', text: '五棱柱——一个你从没见过的截面。西闸门开了。' },
+    { id: 'h-east', when: 'activated:e-node', text: '东节点点亮。它在 w = −1，和走廊不是同一层。' },
+    { id: 'h-south', when: 'activated:w-node', text: '三个节点都亮了，南桥的两个锚点出现。它是正交投影下的双旋桥：按 P 换灯，再把 YW 与 ZW 各自转到位。' },
+    { id: 'h-exit', when: 'exitReady', text: '出口在南边。七天，到此为止。' },
+  ],
+};
+
+export const LEVELS: readonly LevelDef[] = [LEVEL_1, LEVEL_2, LEVEL_3, LEVEL_4, LEVEL_5, LEVEL_6, LEVEL_7, LEVEL_8, LEVEL_9, LEVEL_10, LEVEL_11, LEVEL_12, LEVEL_13, LEVEL_14, LEVEL_15, LEVEL_16, LEVEL_17, LEVEL_18, LEVEL_19, LEVEL_20, LEVEL_21];
 
 export function levelByIndex(index: number): LevelDef | undefined {
   return LEVELS.find((l) => l.index === index);

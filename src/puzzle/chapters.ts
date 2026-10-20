@@ -57,6 +57,15 @@ export const CHAPTERS: readonly ChapterDef[] = [
     outro: '侧步、穿过、你就是切片。前五天你一直站在三维里转动四维；今天你自己迈出了第四个方向。那些在三维里断开的路，从来都是连着的。',
     levels: LEVELS.filter((l) => l.chapter === 6),
   },
+  {
+    index: 7,
+    id: 'nexus',
+    title: 'The Nexus',
+    subtitle: '枢纽',
+    concept: '终章：没有新概念，前六天的每一种能力在同一个枢纽里协同',
+    outro: '回响、两盏灯、枢纽。七天：折叠、双旋、截面、影子、异形、跨越，然后是这里。你看到的从来只是切面——但你已经知道怎么转动它、扫描它、换一盏灯看它、换一种物体试它、以及亲自走进去。',
+    levels: LEVELS.filter((l) => l.chapter === 7),
+  },
 ];
 
 export function chapterOf(level: LevelDef): ChapterDef {

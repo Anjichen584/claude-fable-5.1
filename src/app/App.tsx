@@ -67,7 +67,7 @@ export default function App() {
             <LevelComplete title={snap.title} index={snap.levelIndex} last={!!snap.chapter && snap.chapter.levelInChapter >= snap.chapter.levelCount} onNext={() => g.nextLevel()} onReplay={() => g.resetLevel()} />
           )}
           {snap.phase === 'won' && (
-            <Victory chapter={snap.chapter} onMenu={() => g.toMenu()} onReplay={() => g.startChapter(snap.chapter?.index ?? 1)} onNextChapter={() => g.nextChapter()} />
+            <Victory chapter={snap.chapter} trail={snap.trail} onMenu={() => g.toMenu()} onReplay={() => g.startChapter(snap.chapter?.index ?? 1)} onNextChapter={() => g.nextChapter()} />
           )}
           {snap.debug && debugState && (
             <DebugHUD snapshot={debugState} fps={snap.fps} handle={{ state: g.viewState, touch: () => setDebugState(structuredClone(g.viewState)) }} />

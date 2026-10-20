@@ -189,7 +189,8 @@ function BridgeRow({ b }: { b: GameSnapshot['bridges'][number] }) {
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
         <span style={{ color }}>
           {b.id}
-          {b.projection ? <span style={{ color: '#6a7aa0' }}> · 对径 · {b.projection === 'perspective' ? '透视' : '正交'}</span> : b.second ? <span style={{ color: '#6a7aa0' }}> · 双旋</span> : null}
+          {b.second && (b.plane2 !== b.plane || !b.projection) ? <span style={{ color: '#6a7aa0' }}> · 双旋</span> : null}
+          {b.projection ? <span style={{ color: '#6a7aa0' }}>{b.second && b.plane2 === b.plane ? ' · 对径' : ''} · {b.projection === 'perspective' ? '透视' : '正交'}</span> : null}
           {b.anyVertex ? <span style={{ color: GOLD }}> · 任意顶点</span> : null}
         </span>
         <span>

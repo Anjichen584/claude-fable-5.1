@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
-import type { ChapterSnapshot } from '../game/GameController';
+import type { ChapterSnapshot, GameSnapshot } from '../game/GameController';
+import { trailColor, trailTopDown, trailWProfile } from '../puzzle/trail';
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 const CYAN = '#38e8ff';
@@ -74,22 +75,65 @@ export function LevelComplete({ title, index, last, onNext, onReplay }: { title:
   );
 }
 
-export function Victory({ chapter, onMenu, onReplay, onNextChapter }: { chapter: ChapterSnapshot | null; onMenu: () => void; onReplay: () => void; onNextChapter: () => void }) {
+export function Victory({ chapter, trail, onMenu, onReplay, onNextChapter }: { chapter: ChapterSnapshot | null; trail: GameSnapshot['trail']; onMenu: () => void; onReplay: () => void; onNextChapter: () => void }) {
   const idx = chapter?.index ?? 1;
+  const final = !chapter?.hasNext;
   return (
-    <Overlay dim={0.55}>
-      <div style={{ fontSize: 11, letterSpacing: '0.5em', color: '#ffd166' }}>CHAPTER {String(idx).padStart(2, '0')} · DAY {idx} COMPLETE</div>
-      <div style={{ fontSize: 40, fontWeight: 800, marginTop: 8, letterSpacing: '0.1em' }}>{cnChapter(idx)} · {chapter?.subtitle ?? ''}</div>
-      <div style={{ marginTop: 14, color: '#9fb3d9', fontSize: 14, maxWidth: 520, textAlign: 'center', lineHeight: 1.8 }}>
+    <Overlay dim={final ? 0.7 : 0.55}>
+      <div style={{ fontSize: 11, letterSpacing: '0.5em', color: '#ffd166' }}>{final ? 'SEVEN DAYS · ALL CHAPTERS COMPLETE' : `CHAPTER ${String(idx).padStart(2, '0')} · DAY ${idx} COMPLETE`}</div>
+      <div style={{ fontSize: final ? 34 : 40, fontWeight: 800, marginTop: 8, letterSpacing: '0.1em' }}>{cnChapter(idx)} · {chapter?.subtitle ?? ''}</div>
+      <div style={{ marginTop: 14, color: '#9fb3d9', fontSize: 14, maxWidth: 560, textAlign: 'center', lineHeight: 1.8 }}>
         {chapter?.outro}
       </div>
-      <div style={{ display: 'flex', gap: 12, marginTop: 30 }}>
+      {final && trail && <TrailMap trail={trail} />}
+      <div style={{ display: 'flex', gap: 12, marginTop: final ? 20 : 30 }}>
         {chapter?.hasNext ? <Button onClick={onNextChapter}>下一章 · DAY {idx + 1}</Button> : null}
-        <Button onClick={onReplay} ghost={!!chapter?.hasNext}>{chapter?.hasNext ? '重玩本章' : '从头再玩'}</Button>
+        <Button onClick={onReplay} ghost={!!chapter?.hasNext}>{chapter?.hasNext ? '重玩本章' : '重玩终章'}</Button>
         <Button onClick={onMenu} ghost>主菜单</Button>
       </div>
-      {!chapter?.hasNext && <div style={{ marginTop: 18, fontSize: 11, color: '#4a5a80' }}>后续章节（枢纽）开发中。</div>}
+      {final && <div style={{ marginTop: 14, fontSize: 11, color: '#4a5a80' }}>NEXUS: 4D · 七个切面，到此为止。感谢游玩。</div>}
     </Overlay>
+  );
+}
+
+/** 终章结算：玩家在枢纽里的四维轨迹——俯视图（颜色 = w）+ W 剖面 + 统计 */
+function TrailMap({ trail }: { trail: NonNullable<GameSnapshot['trail']> }) {
+  const W = 420;
+  const H = 240;
+  const { points, d } = trailTopDown(trail.samples, W, H, 18);
+  const profile = trailWProfile(trail.samples);
+  const st = trail.stats;
+  const PW = 420;
+  const PH = 70;
+  const wSpan = Math.max(1, st.wMax - st.wMin);
+  const py = (w: number) => 8 + (PH - 16) * (1 - (w - st.wMin) / wSpan);
+  const segs = points.slice(1).map((p, i) => ({ a: points[i], b: p, w: (points[i].w + p.w) / 2 }));
+  const first = points[0];
+  const last = points[points.length - 1];
+  return (
+    <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }} data-testid="trail-map">
+      <div style={{ fontSize: 10, letterSpacing: '0.3em', color: '#6fa8ff' }}>你在「{trail.levelTitle}」里的四维轨迹 · 俯视 x / z，颜色 = w</div>
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ background: 'rgba(8,12,28,0.7)', border: '1px solid #1d3b6e', borderRadius: 8 }}>
+        <path d={d} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={6} strokeLinecap="round" strokeLinejoin="round" />
+        {segs.map((sg, i) => (
+          <line key={i} x1={sg.a.x} y1={sg.a.y} x2={sg.b.x} y2={sg.b.y} stroke={trailColor(sg.w)} strokeWidth={2.2} strokeLinecap="round" />
+        ))}
+        {first && <circle cx={first.x} cy={first.y} r={4} fill="#38e8ff" />}
+        {last && <circle cx={last.x} cy={last.y} r={5} fill="none" stroke="#ffd166" strokeWidth={2} />}
+      </svg>
+      <svg width={PW} height={PH} viewBox={`0 0 ${PW} ${PH}`} style={{ background: 'rgba(8,12,28,0.7)', border: '1px solid #1d3b6e', borderRadius: 8 }}>
+        <line x1={0} y1={py(0)} x2={PW} y2={py(0)} stroke="#2a3f6e" strokeDasharray="3 4" />
+        <polyline fill="none" stroke="#b967ff" strokeWidth={1.8} points={profile.map((p) => `${(p.s * (PW - 4) + 2).toFixed(1)},${py(p.w).toFixed(1)}`).join(' ')} />
+        <text x={6} y={py(0) - 3} fill="#4a5a80" fontSize={9} fontFamily={MONO}>w = 0</text>
+        <text x={PW - 6} y={PH - 5} fill="#4a5a80" fontSize={9} fontFamily={MONO} textAnchor="end">W 剖面 · 横轴 = 路程</text>
+      </svg>
+      <div style={{ display: 'flex', gap: 18, fontSize: 11, color: '#9fb3d9', fontFamily: MONO }}>
+        <span>路程 <b style={{ color: '#fff' }}>{st.length3.toFixed(1)}</b> m</span>
+        <span>沿 W <b style={{ color: '#b967ff' }}>{st.wTravel.toFixed(1)}</b></span>
+        <span>经过 <b style={{ color: '#ffd166' }}>{st.layers}</b> 层</span>
+        <span>用时 <b style={{ color: '#fff' }}>{Math.round(st.duration)}</b> s</span>
+      </div>
+    </div>
   );
 }
 

@@ -5,6 +5,7 @@ import { CHAPTERS, chapterOf, isLastInChapter, nextChapter } from '../puzzle/cha
 import type { ChapterDef } from '../puzzle/types';
 import { PuzzleSession, type BridgeStatus, type PuzzleEvent } from '../puzzle/PuzzleSession';
 import type { LevelDef } from '../puzzle/types';
+import { Trail, trailStats, type TrailSample, type TrailStats } from '../puzzle/trail';
 import { AudioEngine } from './Audio';
 import { CoreController } from './CoreController';
 import { GameScene } from './GameScene';
@@ -78,6 +79,8 @@ export interface GameSnapshot {
   exitReady: boolean;
   hint: string | null;
   slice: { enabled: boolean; w0: number } | null;
+  /** 第七章：本关玩家轨迹（仅在 complete / won 阶段附带，避免每帧拷贝） */
+  trail: { samples: TrailSample[]; stats: TrailStats; levelTitle: string } | null;
   /** 第六章：玩家自身的 w；未启用时 null */
   playerW: { w: number; range: [number, number]; blocked: boolean; sliceFollows: boolean } | null;
   /** 核心多胞体（第五章起可能不是超立方体） */
@@ -102,6 +105,7 @@ export class GameController {
   readonly viewState: ViewState = createDefaultViewState();
   readonly audio = new AudioEngine();
   phase: GamePhase = 'menu';
+  private readonly trail = new Trail();
   private wonChapter: ChapterDef | null = null;
   debug = false;
 
@@ -191,6 +195,7 @@ export class GameController {
 
     this.player.setPosition(level.playerStart);
     this.player.facing = Math.PI;
+    this.trail.reset();
     this.player.wEnabled = level.playerW?.enabled ?? false;
     this.player.w = level.playerW?.initial ?? 0;
     this.player.wRange = level.playerW?.range ?? [0, 0];
@@ -309,6 +314,8 @@ export class GameController {
       const camDir = new THREE.Vector3().subVectors(this.scene.controls.target, this.scene.camera.position);
       const fl = Math.hypot(camDir.x, camDir.z) || 1;
       this.player.update(dt, inp, [camDir.x / fl, camDir.z / fl], this.session.walkable(), t);
+      this.trail.push(this.player.position, this.player.w, t);
+      if (import.meta.env.DEV) (window as unknown as { __nexusPlayer?: unknown }).__nexusPlayer = { x: this.player.position[0], z: this.player.position[2], w: this.player.w };
       if (this.coreController.sliceFollowsPlayer && this.level.slice) {
         // 第六章："你自己就是切片"：切片 w₀ 跟随玩家 w
         const [lo, hi] = this.level.slice.range;
@@ -466,6 +473,7 @@ export class GameController {
       exitReady: s?.exitReady ?? false,
       hint: this.hint,
       slice: l?.slice ? { ...this.viewState.slice } : null,
+      trail: (this.phase === 'complete' || this.phase === 'won') && this.trail.samples.length > 1 ? { samples: this.trail.samples.slice(), stats: trailStats(this.trail.samples), levelTitle: l?.title ?? '' } : null,
       playerW: this.player.wEnabled ? { w: this.player.w, range: [this.player.wRange[0], this.player.wRange[1]], blocked: this.player.wBlocked, sliceFollows: this.coreController.sliceFollowsPlayer } : null,
       polytope: { kind: this.poly.name as PolytopeKind, name: POLYTOPE_NAMES[this.poly.name as PolytopeKind], vertices: this.poly.vertices.length, edges: this.poly.edges.length, cells: this.poly.cells.length },
       projection: { mode: this.viewState.projectionMode, switchable: l?.core.projection?.switchable ?? false, blend: this.viewState.projectionBlend },
